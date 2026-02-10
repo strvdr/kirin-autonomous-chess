@@ -2584,33 +2584,3 @@ void uciLoop() {
         }
     }
 }
-
-/************ Init All ************/
-//init all variables
-void initAll() {
-  initLeaperAttacks(); 
-  initSliderAttacks(bishop);  
-  initSliderAttacks(rook);
-  initRandKeys();
-  initEvaluationMasks();
-  
-  clearTranspositionTable();
-}
-
-/************ Main Driver ************/
-
-int main() { 
-  initAll(); 
-  
-  int debug = 0;
-  
-  if(debug) { 
-    parseFEN("8/8/8/P1P4/8/5p1p/8/8 w - - ");
-    printBoard(); 
-    printf("Score: %d\n", evaluate());
-    //searchPosition(10);
-    
-    //info score cp 20 depth 7 nodes 56762 pv b1c3 d7d5 d2d4 b8c6 g1f3 g8f6 c1f4
-  } else uciLoop();
-  return 0;
-}
