@@ -405,5 +405,3 @@ void communicate() {
 | Iterative Deepening | Time management + PV | Lines 2230-2288 |
 
 ---
-
-This should help you navigate the codebase! Let me know if you'd like me to dive deeper into any specific section.
