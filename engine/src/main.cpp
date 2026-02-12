@@ -35,10 +35,6 @@
 #include <cstdio>
 #include "engine.h"
 
-// Forward declarations for slider types from engine
-extern const int rook;
-extern const int bishop;
-
 /************ Init All ************/
 void initAll() {
     initLeaperAttacks(); 

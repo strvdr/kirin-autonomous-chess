@@ -1,0 +1,197 @@
+//********** Key Data Structures **********\\
+Board:
+    squares[8][8] -> Piece or Empty
+    
+Piece:
+    type: N, B, R, Q, K, P
+    color: White, Black
+    position: (row, col)
+
+Move:
+    piece: Piece
+    from: (row, col)
+    to: (row, col)
+
+Path:
+    squares: list of (row, col)  // ordered sequence of squares traversed
+
+
+//********** Path Generation **********\\
+The goal of path generation is to find the desired path of the piece, without taking blocking pieces into account.
+
+function generatePath(move):
+    piece = move.piece
+    from = move.from
+    to = move.to
+    
+    switch piece.type:
+        case N:
+            return generateKnightPath(from, to)
+        case B:
+            return generateDiagonalPath(from, to)
+        case R:
+            return generateOrthogonalPath(from, to)
+        case Q:
+            return generateQueenPath(from, to)
+        case K:
+            return generateKingPath(from, to)
+        case P:
+            return generatePawnPath(from, to)
+
+
+function generateKnightPath(from, to):
+    rowDiff = to.row - from.row
+    colDiff = to.col - from.col
+    
+    // Build both possible L-paths
+    pathVerticalFirst = []
+    pathHorizontalFirst = []
+    
+    // Vertical first: move along rows, then columns
+    current = from
+    rowStep = sign(rowDiff)
+    colStep = sign(colDiff)
+    
+    // Move vertically
+    for i in 1 to abs(rowDiff):
+        current = (current.row + rowStep, current.col)
+        pathVerticalFirst.append(current)
+    
+    // Move horizontally
+    for i in 1 to abs(colDiff):
+        current = (current.row, current.col + colStep)
+        pathVerticalFirst.append(current)
+    
+    // Horizontal first: move along columns, then rows
+    current = from
+    
+    // Move horizontally
+    for i in 1 to abs(colDiff):
+        current = (current.row, current.col + colStep)
+        pathHorizontalFirst.append(current)
+    
+    // Move vertically
+    for i in 1 to abs(rowDiff):
+        current = (current.row + rowStep, current.col)
+        pathHorizontalFirst.append(current)
+    
+    return [pathVerticalFirst, pathHorizontalFirst]
+
+
+function generateDiagonalPath(from, to):
+    path = []
+    rowStep = sign(to.row - from.row)
+    colStep = sign(to.col - from.col)
+    current = from
+    
+    while current != to:
+        current = (current.row + rowStep, current.col + colStep)
+        path.append(current)
+    
+    return [path]
+
+
+function generateOrthogonalPath(from, to):
+    path = []
+    rowStep = sign(to.row - from.row)
+    colStep = sign(to.col - from.col)
+    current = from
+    
+    while current != to:
+        current = (current.row + rowStep, current.col + colStep)
+        path.append(current)
+    
+    return [path]
+
+
+function generateQueenPath(from, to):
+    // Determine if diagonal or orthogonal
+    rowDiff = abs(to.row - from.row)
+    colDiff = abs(to.col - from.col)
+    
+    if rowDiff == colDiff:
+        return generateDiagonalPath(from, to)
+    else:
+        return generateOrthogonalPath(from, to)
+
+
+function generateKingPath(from, to):
+    // King moves one square, so path is just the destination
+    return [[to]]
+
+
+function generatePawnPath(from, to):
+    // Similar to king, usually just one or two squares forward
+    path = []
+    rowStep = sign(to.row - from.row)
+    current = from
+    
+    while current != to:
+        current = (current.row + rowStep, current.col)
+        path.append(current)
+    
+    return [path]
+
+//********** Blocker Detection **********\\
+function findBlockers(board, path):
+  blockers = []
+
+  //check all squares except for the last one (destination)
+  //destination may have a capture, but we handle that separately
+  for i in 0 to len(path) - 2:
+    square = path[i]
+    if board.squares[square.row][square.col] != Empty:
+      blockers.append(square)
+  
+  return blockers
+
+function selectBestPath(board, paths):
+  bestPath = null
+  fewestBlockers = infinity
+
+  for path in paths:
+    blockers = findBlockers(board, path)
+    if len(blockers) < fewestBlockers:
+      fewestBlockers = len(blockers)
+      bestPath = path
+
+  return bestPath
+
+//********** Parking Spot Selection **********\\
+function findParkingSpot(board, blockerPos, excludeSquares):
+  //find nearest empty square that isn't in the primary path
+  //use bfs to search outward from blockers position
+  visited = set()
+  queue = [blockerPos]
+
+  while queue is not empty:
+    current = queue.pop_front()
+
+    if current in visited:
+      continue
+    visited.add(current)
+
+    //check if valid parking spot
+    if current != blockerPos:
+      if board.squares[current.row][current.col] == Empty:
+        if current not in excludeSquares:
+          return current
+
+    //add neighbors (all 8 directions)
+    for neighbor in getNeighbors(current):
+      if isValidSquare(neighbor) and neighbor not in visited:
+        queue.append(neighbor)
+
+  return null // no parking spot found
+
+function getNeighbors(pos):
+  neighbors = []
+  for rowDelta in  [-1, 0, 1]:
+    for colDelta in [-1, 0, 1]:
+      if rowDelta == 0 and colDelta == 0:
+        continue
+      neighbors.append((pos.row + rowDelta, pos.col + colDelta))
+
+  return neighbors
+
+//********** Blocker Path Planning **********\\
