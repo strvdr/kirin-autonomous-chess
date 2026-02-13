@@ -15,11 +15,11 @@ jobs:
         uses: actions/checkout@v4
       
       - name: Configure CMake
-        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -B engine/build -S engine
       
       - name: Build
-        run: cmake --build build
+        run: cmake --build engine/build
       
       - name: Run perft test
         run: |
-          echo -e "position startpos\ngo perft 5\nquit" | ./build/kirin
+          echo -e "position startpos\ngo perft 5\nquit" | ./engine/build/kirin
