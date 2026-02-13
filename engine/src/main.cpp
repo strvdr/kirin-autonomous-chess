@@ -35,30 +35,39 @@
 #include <cstdio>
 #include "engine.h"
 
-/************ Init All ************/
+/************ Initialize All Subsystems ************/
 void initAll() {
+    // Initialize attack tables
     initLeaperAttacks(); 
-    initSliderAttacks(1);  // bishop
-    initSliderAttacks(0);  // rook
+    initSliderAttacks(bishop_slider);
+    initSliderAttacks(rook_slider);
+    
+    // Initialize Zobrist keys
     initRandKeys();
+    
+    // Initialize evaluation masks
     initEvaluationMasks();
+    
+    // Clear transposition table
     clearTranspositionTable();
 }
 
 /************ Main Driver ************/
 int main() { 
+    // Initialize engine
     initAll(); 
     
     int debug = 0;
     
     if (debug) { 
+        // Debug mode: load position and evaluate
         parseFEN("8/8/8/P1P4/8/5p1p/8/8 w - - ");
         printBoard(); 
         printf("Score: %d\n", evaluate());
     } else {
+        // Normal mode: run UCI loop
         uciLoop();
     }
     
     return 0;
 }
-

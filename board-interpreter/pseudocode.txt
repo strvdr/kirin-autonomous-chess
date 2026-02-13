@@ -195,3 +195,105 @@ function getNeighbors(pos):
   return neighbors
 
 //********** Blocker Path Planning **********\\
+function planBlockerMove(board, from, to):
+    // Blockers can move any efficient route
+    // Prefer diagonal movement when possible, use A* or BFS
+    
+    return findClearPath(board, from, to)
+
+
+function findClearPath(board, from, to):
+    // A* pathfinding avoiding occupied squares
+    
+    openSet = PriorityQueue()
+    openSet.add(from, priority = heuristic(from, to))
+    
+    cameFrom = {}
+    gScore = {from: 0}
+    
+    while openSet is not empty:
+        current = openSet.pop()
+        
+        if current == to:
+            return reconstructPath(cameFrom, current)
+        
+        for neighbor in getNeighbors(current):
+            if not isValidSquare(neighbor):
+                continue
+            if board.squares[neighbor.row][neighbor.col] != Empty and neighbor != to:
+                continue
+            
+            tentativeG = gScore[current] + 1
+            
+            if tentativeG < gScore.get(neighbor, infinity):
+                cameFrom[neighbor] = current
+                gScore[neighbor] = tentativeG
+                openSet.add(neighbor, priority = tentativeG + heuristic(neighbor, to))
+    
+    return null  // No path found
+
+
+function heuristic(from, to):
+    // Chebyshev distance (allows diagonal movement)
+    return max(abs(to.row - from.row), abs(to.col - from.col))
+
+
+//********** Main Execution Planner **********\\
+function planMove(board, move):
+    // Generate possible paths for the primary piece
+    paths = generatePath(move)
+    
+    // Select the path with fewest blockers
+    primaryPath = selectBestPath(board, paths)
+    
+    // Find all blockers on the chosen path
+    blockerSquares = findBlockers(board, primaryPath)
+    
+    // Plan relocation for each blocker
+    relocationPlan = []
+    excludeSquares = set(primaryPath)
+    
+    for blockerPos in blockerSquares:
+        parkingSpot = findParkingSpot(board, blockerPos, excludeSquares)
+        
+        if parkingSpot == null:
+            return Error("Cannot find parking spot for blocker")
+        
+        blockerPath = planBlockerMove(board, blockerPos, parkingSpot)
+        
+        if blockerPath == null:
+            return Error("Cannot find clear path for blocker")
+        
+        relocationPlan.append({
+            piece: board.squares[blockerPos.row][blockerPos.col],
+            from: blockerPos,
+            to: parkingSpot,
+            path: blockerPath
+        })
+        
+        // Mark parking spot as occupied for subsequent planning
+        excludeSquares.add(parkingSpot)
+    
+    // Build final execution sequence
+    return {
+        relocations: relocationPlan,
+        primaryMove: {
+            piece: move.piece,
+            path: primaryPath
+        },
+        restorations: reverse(relocationPlan)  // Return blockers in reverse order
+    }
+
+//********** Execution **********\\
+function executeMovePlan(gantry, plan):
+    // Move blockers out of the way
+    for relocation in plan.relocations:
+        gantry.movePiece(relocation.from, relocation.to, relocation.path)
+    
+    // Execute primary move
+    gantry.movePiece(plan.primaryMove.from, plan.primaryMove.to, plan.primaryMove.path)
+    
+    // Restore blockers to original positions
+    for restoration in plan.restorations:
+        returnPath = planBlockerMove(board, restoration.to, restoration.from)
+        gantry.movePiece(restoration.to, restoration.from, returnPath)
