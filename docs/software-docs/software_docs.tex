@@ -1,0 +1,536 @@
+\documentclass[11pt,a4paper]{report}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{skak}           % Chess diagrams and notation
+\usepackage{xskak}          % Extended chess support
+\usepackage{chessboard}     % Chess board diagrams
+\usepackage{amsmath}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% Colors
+\definecolor{codebackground}{RGB}{245,245,245}
+\definecolor{codecomment}{RGB}{0,128,0}
+\definecolor{codekeyword}{RGB}{0,0,180}
+\definecolor{codestring}{RGB}{163,21,21}
+\definecolor{linkcolor}{RGB}{0,80,160}
+\definecolor{chaptercolor}{RGB}{40,60,100}
+
+% Hyperref setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=linkcolor,
+    urlcolor=linkcolor,
+    citecolor=linkcolor,
+    pdftitle={Chess Engine Documentation},
+    pdfauthor={Your Name},
+}
+
+% Code listing style
+\lstdefinestyle{codestyle}{
+    backgroundcolor=\color{codebackground},
+    basicstyle=\ttfamily\small,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    commentstyle=\color{codecomment}\itshape,
+    keywordstyle=\color{codekeyword}\bfseries,
+    stringstyle=\color{codestring},
+    numberstyle=\tiny\color{gray},
+    numbers=left,
+    numbersep=8pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=4,
+    frame=single,
+    framerule=0.5pt,
+    rulecolor=\color{gray!50},
+}
+\lstset{style=codestyle}
+
+% Chapter and section styling
+\titleformat{\chapter}[display]
+    {\normalfont\huge\bfseries\color{chaptercolor}}
+    {\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{30pt}
+
+% Header and footer
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\leftmark}
+\fancyhead[R]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% Chess move formatting
+\newcommand{\move}[1]{\texttt{#1}}
+
+% Function/method documentation
+\newcommand{\function}[4]{%
+    \paragraph{\texttt{#1}} \hfill \textit{#2}\\
+    \textbf{Parameters:} #3\\
+    \textbf{Returns:} #4
+}
+
+% API endpoint
+\newcommand{\apiendpoint}[3]{%
+    \noindent\fbox{\texttt{#1}} \texttt{#2}\\
+    #3\vspace{0.5em}
+}
+
+% Note box
+\newcommand{\notebox}[1]{%
+    \begin{center}
+    \fcolorbox{gray}{gray!10}{%
+        \parbox{0.9\textwidth}{\textbf{Note:} #1}
+    }
+    \end{center}
+}
+
+% Warning box
+\newcommand{\warningbox}[1]{%
+    \begin{center}
+    \fcolorbox{red!70}{red!10}{%
+        \parbox{0.9\textwidth}{\textbf{Warning:} #1}
+    }
+    \end{center}
+}
+
+%------------------------------------------------------------------------------
+% Document Information
+%------------------------------------------------------------------------------
+\title{%
+    \vspace{-1cm}
+    \rule{\textwidth}{1pt}\\[0.5cm]
+    {\Huge\bfseries First Move Robotics}\\[0.3cm]
+    {\Large Software Documentation}\\[0.3cm]
+    \rule{\textwidth}{1pt}\\[1cm]
+    {\large Version 1.0.0}
+}
+\author{Strydr Silverberg\\strydr\_silverberg@mines.edu}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+\thispagestyle{empty}
+
+\vfill
+\begin{center}
+    \textit{A high-performance chess engine written in C++}
+\end{center}
+\vfill
+
+\newpage
+\tableofcontents
+\newpage
+
+%==============================================================================
+\chapter{Introduction}
+%==============================================================================
+
+\section{Overview}
+
+This document provides comprehensive documentation for the \textbf{Kirin Chess Engine}. Kirin is a chess engine written in C++ and an integral part of the \textbf{First Move Robotics} chess board project.
+
+\section{Features}
+
+\begin{itemize}
+    \item Feature 1: Brief description
+    \item Feature 2: Brief description
+    \item Feature 3: Brief description
+\end{itemize}
+
+\section{System Requirements}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Component} & \textbf{Requirement} \\
+\midrule
+Operating System & Windows / Linux / macOS \\
+Memory & Minimum 256 MB RAM \\
+Processor & Any modern x86-64 CPU \\
+Dependencies & List dependencies here \\
+\bottomrule
+\end{tabular}
+\caption{Minimum system requirements}
+\end{table}
+
+%==============================================================================
+\chapter{Installation}
+%==============================================================================
+
+\section{Building from Source}
+
+Clone the repository and build:
+
+\begin{lstlisting}[language=bash]
+git clone https://github.com/username/chess-engine.git
+cd chess-engine
+make
+\end{lstlisting}
+
+\section{Pre-built Binaries}
+
+Download the latest release from the releases page.
+
+\section{Configuration}
+
+The engine can be configured via the \texttt{config.ini} file:
+
+\begin{lstlisting}
+[Engine]
+hash_size = 256
+threads = 4
+ponder = true
+\end{lstlisting}
+
+%==============================================================================
+\chapter{Architecture}
+%==============================================================================
+
+\section{Overview}
+
+Describe the high-level architecture of your engine here.
+
+\section{Board Representation}
+
+\subsection{Data Structures}
+
+Describe how the board is represented (bitboards, mailbox, 0x88, etc.).
+
+\begin{lstlisting}[language=C++]
+// Example bitboard representation
+struct Position {
+    uint64_t pieces[2][6];  // [color][piece_type]
+    uint64_t occupied[2];   // [color]
+    uint64_t all_pieces;
+    int side_to_move;
+    int castling_rights;
+    int en_passant_square;
+    int halfmove_clock;
+    int fullmove_number;
+};
+\end{lstlisting}
+
+\subsection{Chess Position Example}
+
+Here is an example starting position:
+
+\begin{center}
+\chessboard[setfen=rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1]
+\end{center}
+
+After \move{1.e4 e5 2.Nf3}:
+
+\begin{center}
+\chessboard[setfen=rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2]
+\end{center}
+
+\section{Move Generation}
+
+Describe your move generation approach.
+
+\subsection{Legal Move Generation}
+
+\begin{algorithm}
+\caption{Legal Move Generation}
+\begin{algorithmic}[1]
+\Procedure{GenerateMoves}{position}
+    \State moves $\gets$ empty list
+    \For{each piece of side to move}
+        \State Generate pseudo-legal moves for piece
+        \For{each pseudo-legal move}
+            \If{move does not leave king in check}
+                \State Add move to moves
+            \EndIf
+        \EndFor
+    \EndFor
+    \State \Return moves
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+
+%==============================================================================
+\chapter{Search Algorithm}
+%==============================================================================
+
+\section{Overview}
+
+Describe your search algorithm (Alpha-Beta, MCTS, etc.).
+
+\section{Alpha-Beta Search}
+
+\begin{algorithm}
+\caption{Alpha-Beta with Negamax}
+\begin{algorithmic}[1]
+\Function{AlphaBeta}{position, depth, $\alpha$, $\beta$}
+    \If{depth = 0}
+        \State \Return \Call{Evaluate}{position}
+    \EndIf
+    \For{each move in \Call{GenerateMoves}{position}}
+        \State \Call{MakeMove}{position, move}
+        \State score $\gets$ $-$\Call{AlphaBeta}{position, depth$-$1, $-\beta$, $-\alpha$}
+        \State \Call{UnmakeMove}{position, move}
+        \If{score $\geq \beta$}
+            \State \Return $\beta$ \Comment{Beta cutoff}
+        \EndIf
+        \If{score $> \alpha$}
+            \State $\alpha \gets$ score
+        \EndIf
+    \EndFor
+    \State \Return $\alpha$
+\EndFunction
+\end{algorithmic}
+\end{algorithm}
+
+\section{Search Enhancements}
+
+\subsection{Transposition Table}
+
+Describe your transposition table implementation.
+
+\subsection{Move Ordering}
+
+\begin{enumerate}
+    \item Hash move (from transposition table)
+    \item Winning captures (MVV-LVA)
+    \item Killer moves
+    \item History heuristic
+    \item Quiet moves
+\end{enumerate}
+
+\subsection{Pruning Techniques}
+
+\begin{itemize}
+    \item Null Move Pruning
+    \item Late Move Reductions (LMR)
+    \item Futility Pruning
+    \item Delta Pruning (in quiescence)
+\end{itemize}
+
+%==============================================================================
+\chapter{Evaluation}
+%==============================================================================
+
+\section{Overview}
+
+Describe your evaluation function approach.
+
+\section{Material}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Piece} & \textbf{Value (centipawns)} \\
+\midrule
+Pawn & 100 \\
+Knight & 320 \\
+Bishop & 330 \\
+Rook & 500 \\
+Queen & 900 \\
+\bottomrule
+\end{tabular}
+\caption{Piece values}
+\end{table}
+
+\section{Positional Factors}
+
+\subsection{Piece-Square Tables}
+
+\begin{lstlisting}[language=C++]
+// Example: Pawn piece-square table (middlegame)
+const int pawn_psqt[64] = {
+     0,  0,  0,  0,  0,  0,  0,  0,
+    50, 50, 50, 50, 50, 50, 50, 50,
+    10, 10, 20, 30, 30, 20, 10, 10,
+     5,  5, 10, 25, 25, 10,  5,  5,
+     0,  0,  0, 20, 20,  0,  0,  0,
+     5, -5,-10,  0,  0,-10, -5,  5,
+     5, 10, 10,-20,-20, 10, 10,  5,
+     0,  0,  0,  0,  0,  0,  0,  0
+};
+\end{lstlisting}
+
+\section{King Safety}
+
+Describe king safety evaluation.
+
+\section{Pawn Structure}
+
+Describe pawn structure evaluation: doubled pawns, isolated pawns, passed pawns, etc.
+
+%==============================================================================
+\chapter{UCI Protocol}
+%==============================================================================
+
+\section{Overview}
+
+The engine communicates via the Universal Chess Interface (UCI) protocol.
+
+\section{Supported Commands}
+
+\subsection{Standard UCI Commands}
+
+\apiendpoint{IN}{uci}{Initialize UCI mode and request engine identification.}
+
+\apiendpoint{IN}{isready}{Check if engine is ready.}
+
+\apiendpoint{IN}{position [fen | startpos] moves ...}{Set up a position.}
+
+\apiendpoint{IN}{go [options]}{Start calculating. Options include:}
+\begin{itemize}[noitemsep]
+    \item \texttt{depth n} -- search to depth n
+    \item \texttt{movetime ms} -- search for ms milliseconds
+    \item \texttt{wtime/btime ms} -- time remaining
+    \item \texttt{infinite} -- search until stopped
+\end{itemize}
+
+\apiendpoint{IN}{stop}{Stop calculating.}
+
+\apiendpoint{IN}{quit}{Exit the engine.}
+
+\subsection{Engine Options}
+
+\begin{lstlisting}
+setoption name Hash value 256
+setoption name Threads value 4
+setoption name Ponder value true
+\end{lstlisting}
+
+%==============================================================================
+\chapter{API Reference}
+%==============================================================================
+
+\section{Core Classes}
+
+\subsection{Position}
+
+\function{Position()}{Constructor}{None}{New Position object}
+
+\function{set\_fen(fen: string)}{Method}{fen -- FEN string}{bool -- success}
+
+\function{make\_move(move: Move)}{Method}{move -- Move to make}{bool -- success}
+
+\subsection{Search}
+
+\function{search(position: Position, limits: SearchLimits)}{Function}{position, limits}{SearchResult}
+
+\section{Utility Functions}
+
+\function{perft(position: Position, depth: int)}{Function}{position, depth}{uint64 -- node count}
+
+%==============================================================================
+\chapter{Testing}
+%==============================================================================
+
+\section{Perft Testing}
+
+Perft (performance test) validates move generation:
+
+\begin{lstlisting}[language=bash]
+./engine perft 6
+\end{lstlisting}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{cr}
+\toprule
+\textbf{Depth} & \textbf{Nodes} \\
+\midrule
+1 & 20 \\
+2 & 400 \\
+3 & 8,902 \\
+4 & 197,281 \\
+5 & 4,865,609 \\
+6 & 119,060,324 \\
+\bottomrule
+\end{tabular}
+\caption{Perft results from starting position}
+\end{table}
+
+\section{Test Positions}
+
+Include strategic and tactical test suites (WAC, ECM, STS, etc.).
+
+%==============================================================================
+\chapter{Performance}
+%==============================================================================
+
+\section{Benchmarks}
+
+Document performance metrics here.
+
+\section{Optimization Techniques}
+
+\begin{itemize}
+    \item Magic bitboards for sliding piece attacks
+    \item SIMD instructions where applicable
+    \item Cache-friendly data structures
+    \item Efficient hash table implementation
+\end{itemize}
+
+%==============================================================================
+\chapter{Contributing}
+%==============================================================================
+
+\section{Development Setup}
+
+Instructions for setting up a development environment.
+
+\section{Code Style}
+
+Document your code style guidelines.
+
+\section{Pull Request Process}
+
+\begin{enumerate}
+    \item Fork the repository
+    \item Create a feature branch
+    \item Make changes and add tests
+    \item Submit a pull request
+\end{enumerate}
+
+%==============================================================================
+\appendix
+\chapter{Glossary}
+%==============================================================================
+
+\begin{description}
+    \item[Alpha-Beta] A search algorithm that prunes branches that cannot affect the final result.
+    \item[Bitboard] A 64-bit integer representing piece positions on the board.
+    \item[Centipawn] One hundredth of a pawn; standard unit for evaluation scores.
+    \item[FEN] Forsyth-Edwards Notation; a standard for describing chess positions.
+    \item[Perft] Performance test; counts all leaf nodes at a given depth.
+    \item[Ply] A half-move; one move by either white or black.
+    \item[UCI] Universal Chess Interface; standard protocol for chess engines.
+\end{description}
+
+%==============================================================================
+\chapter{References}
+%==============================================================================
+
+\begin{itemize}
+    \item Chess Programming Wiki: \url{https://www.chessprogramming.org/}
+    \item UCI Protocol Specification
+    \item Stockfish source code: \url{https://github.com/official-stockfish/Stockfish}
+\end{itemize}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\end{document}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
