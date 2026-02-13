@@ -1,0 +1,25 @@
+name: Kirin CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      
+      - name: Build
+        run: cmake --build build
+      
+      - name: Run perft test
+        run: |
+          echo -e "position startpos\ngo perft 5\nquit" | ./build/kirin
