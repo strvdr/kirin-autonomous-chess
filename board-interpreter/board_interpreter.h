@@ -201,7 +201,7 @@ inline void clearBit(Bitboard& bb, int square) {
   bb &= ~(1ULL << square);
 }
 
-inline bool getBit(Bitboard& bb, int square) { 
+inline bool getBit(Bitboard bb, int square) { 
   return (bb & (1ULL << square)) != 0;
 }
 
