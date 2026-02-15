@@ -315,3 +315,42 @@ std::vector<Path> generatePath(const PhysicalMove& move) {
   }
 }
 
+/************ Blocker Detection Implementation ************/
+// find all blocking pieces on a path (excluding dest)
+std::vector<BoardCoord> findBlockers(const PhysicalBoard& board, const Path& path) { 
+  std::vector<BoardCoord> blockers;
+
+  //check all squares except dest
+  //dest may have a capture,but that is handled separately
+  for(int i = 0; i < path.length() - 1; i++) { 
+    const BoardCoord& square = path.squares[i];
+    if(board.isOccupied(square)) { 
+      blockers.push_back(square);
+    }
+  }
+
+  return blockers;
+}
+
+//select the path with fewest blockers 
+Path selectBestPath(const PhysicalBoard& board, const std::vector<Path>& paths) { 
+  if(paths.empty()) {
+    return Path();
+  }
+
+  Path bestPath = paths[0];
+  int fewestBlockers = static_cast<int>(findBlockers(board, paths[0]).size());
+
+  for(size_t i = 1; i < paths.size(); i++) { 
+    int numBlockers = static_cast<int>(findBlockers(board, paths[i]).size());
+    if(numBlockers < fewestBlockers) { 
+      fewestBlockers = numBlockers;
+      bestPath = paths[i];
+    }
+  }
+
+  return bestPath;
+}
+
+
+
