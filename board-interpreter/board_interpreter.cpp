@@ -56,3 +56,94 @@ bool PhysicalBoard::isValidSquare(const BoardCoord& coord) {
 bool PhysicalBoard::isValidSquare(int row, int col) { 
   return row >= 0 && row < BOARD_SIZE && col >= 0 && col < BOARD_SIZE;
 }
+
+void PhysicalBoard::setOccupied(const BoardCoord& coord) { 
+  if(!isValidSquare(coord)) return;
+  int square = coord.toSquareIndex();
+  setBit(occupied, square);
+}
+
+void PhysicalBoard::clearSquare(const BoardCoord& coord) { 
+  if(!isValidSquare(coord)) return;
+  int square = coord.toSquareIndex();
+  clearBit(occupied, square);
+}
+
+void PhysicalBoard::movePiece(const BoardCoord& from, const BoardCoord& to) { 
+  clearSquare(from);
+  setOccupied(to);
+}
+
+void PhysicalBoard::print() const {
+  printf("\n  Physical Board Occupancy:\n");
+  printf("  +-----------------+\n");
+
+  for(int row = 0; row < BOARD_SIZE; row++) {
+    printf("%d | ", 8 - row);
+    for(int col = 0; col < BOARD_SIZE; col++) { 
+      if(isOccupied(row, col)) {
+        printf("X ");
+      } else {
+        printf(". ");
+      }
+    }
+    printf("|\n");
+  }
+  printf("  +-----------------+\n");
+  printf("    a b c d e f g h\n\n");
+}
+
+
+/************ Utility Function Implementations ************/
+std::vector<BoardCoord> getNeighbors(const BoardCoord& pos) { 
+  std::vector<BoardCoord> neighbors;
+  neighbors.reserve(8);
+  for(int rowDelta = -1; rowDelta <= 1; rowDelta++) { 
+    for(int colDelta = -1; colDelta <= 1; colDelta++) {
+      if(rowDelta == 0 && colDelta == 0) continue;
+
+      int newRow = pos.row + rowDelta;
+      int newCol = pos.col + colDelta;
+
+      if(PhysicalBoard::isValidSquare(newRow, newCol)) { 
+        neighbors.push_back(BoardCoord(newRow, newCol));
+      }
+    }
+  }
+
+  return neighbors;
+}
+
+int chebyshevDistance(const BoardCoord& from, const BoardCoord& to) {
+  int rowDiff = (from.row > to.row) ? (from.row - to.row) : (to.row - from.row);
+  int colDiff = (from.col > to.col ) ? (from.col - to.col) : (to.col- from.col);
+  return (rowDiff > colDiff) ? rowDiff : colDiff;
+}
+
+int manhattanDistance(const BoardCoord& from, const BoardCoord& to) {
+  int rowDiff = (from.row > to.row) ? (from.row - to.row) : (to.row - from.row);
+  int colDiff = (from.col > to.col ) ? (from.col - to.col) : (to.col- from.col);
+  return rowDiff + colDiff; 
+}
+
+int countBits(Bitboard bb) { 
+  int count = 0;
+  while(bb) { 
+    count++;
+    bb &= bb - 1; //clear set lsb
+  }
+  return count;
+}
+
+int getLSB(Bitboard bb) {
+  if(!bb) return -1;
+
+  //count trailing zeros
+  int index = 0;
+  while(!(bb & 1)) { 
+    bb >>= 1;
+    index++;
+  }
+
+  return index;
+}
