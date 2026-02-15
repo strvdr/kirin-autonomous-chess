@@ -19,6 +19,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <set>
 
 /************ Type Definitions ************/
 using Bitboard = uint64_t;
@@ -42,7 +43,7 @@ struct BoardCoord {
   int row;
   int col;
 
-  BoardCoord() : row(0,), col(0) {}
+  BoardCoord() : row(0), col(0) {}
   BoardCoord(int r, int c) : row(r), col(c) {}
 
   bool operator==(const BoardCoord& other) const {
@@ -207,4 +208,48 @@ inline bool getBit(Bitboard bb, int square) {
 
 int countBits(Bitboard bb);
 int getLSB(Bitboard bb);
+
+/************ Path Generation ************/
+//Generate all possible paths for a piece to move (some have multiple options)
+//Returns a vector of paths - caller should select the best move
+std::vector<Path> generatePath(const PhysicalMove& move);
+
+std::vector<Path> generatePawnPath(const BoardCoord& from, const BoardCoord& to);
+std::vector<Path> generateKnightPath(const BoardCoord& from, const BoardCoord& to);
+std::vector<Path> generateBishopPath(const BoardCoord& from, const BoardCoord& to);
+std::vector<Path> generateRookPath(const BoardCoord& from, const BoardCoord& to);
+std::vector<Path> generateQueenPath(const BoardCoord& from, const BoardCoord& to);
+std::vector<Path> generateKingPath(const BoardCoord& from, const BoardCoord& to);
+
+//Helpers for path generation functions
+Path generateDiagonalPath(const BoardCoord& from, const BoardCoord& to);
+Path generateOrthogonalPath(const BoardCoord& from, const BoardCoord& to);
+
+/************ Blocker Detection ************/
+//Find all blocking pieces on a path (excludes destination)
+std::vector<BoardCoord> findBlockers(const PhysicalBoard& board, const Path& path);
+
+//Select the path with the fewest blockers
+Path selectBestPath(const PhysicalBoard& board, const std::vector<Path>& paths);
+
+/************ Parking Spot Selection ************/
+//find nearest empty square for temporary blocker parking
+//use bfs to search outward from blocker position
+//excludeSquares: squares that cannot be used (primary path of main piece)
+BoardCoord findParkingSpot(const PhysicalBoard& board, const BoardCoord& blockerPos, const std::set<BoardCoord>& excludeSquares);
+
+/************ A* Pathfinding ************/
+//Find a clear path from one square to another, avoiding occupied squares
+//Used for moving blockers to their parking spot
+//Returns empty path if no path exists
+Path findClearPath(const PhysicalBoard& board, const BoardCoord& from, const BoardCoord& to);
+
+/************ Move Planning ************/
+//generate complete execution plan for a given chess move
+//handles blocker relocation, primary move, and restoration
+MovePlan planMove(PhysicalBoard& board, const PhysicalMove& move);
+
+/************ Debug Functions ************/
+void printPath(const Path& path);
+void printMovePlan(const MovePlan& plan);
 #endif

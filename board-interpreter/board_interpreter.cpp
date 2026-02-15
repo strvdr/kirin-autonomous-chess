@@ -4,6 +4,7 @@
  */
 
 #include <cstdio>
+#include <cstdlib>
 #include "board_interpreter.h"
 
 /************ BoardCoord Implementation ************/
@@ -147,3 +148,170 @@ int getLSB(Bitboard bb) {
 
   return index;
 }
+
+/************ Path Generation Implementation ************/
+//Generate diagonal path(for bishops and diagonal queen moves)
+Path generateDiagonalPath(const BoardCoord& from, const BoardCoord& to) {
+  Path path;
+  int rowStep = sign(to.row - from.row);
+  int colStep = sign(to.col - from.col);
+  BoardCoord current = from;
+
+  while(current != to) {
+    current = BoardCoord(current.row + rowStep, current.col + colStep);
+    path.append(current);
+  }
+
+  return path;
+}
+
+Path generateOrthogonalPath(const BoardCoord& from, const BoardCoord& to) {
+  Path path;
+  int rowStep = sign(to.row - from.row);
+  int colStep = sign(to.col - from.col);
+  BoardCoord current = from;
+
+  while(current != to) {
+    current = BoardCoord(current.row + rowStep, current.col + colStep);
+    path.append(current);
+  }
+
+  return path;
+}
+
+//Pawn path: straight line forward(1 or 2 squares)
+std::vector<Path> generatePawnPath(const BoardCoord& from, const BoardCoord& to) { 
+  std::vector<Path> paths;
+  Path path;
+  
+  int rowStep = sign(to.row - from.row);
+  int colStep = sign(to.col - from.col);
+  BoardCoord current = from;
+
+  while(current != to) {
+    current = BoardCoord(current.row + rowStep, current.col + colStep);
+    path.append(current);
+  }
+
+  paths.push_back(path);
+  return paths;
+}
+
+//Knight path: L-shaped, two possible routes (vertical->horizontal, horizontal->vertical)
+std::vector<Path> generateKnightPath(const BoardCoord& from, const BoardCoord& to) { 
+  std::vector<Path> paths;
+  
+  int rowDiff = to.row - from.row;
+  int colDiff = to.col - from.col;
+  int rowStep = sign(rowDiff);
+  int colStep = sign(colDiff);
+  int absRowDiff = std::abs(rowDiff);
+  int absColDiff = std::abs(colDiff);
+
+  Path pathVerticalFirst;
+  BoardCoord current = from;
+
+  for(int i = 0; i < absRowDiff; i++) { 
+    current = BoardCoord(current.row + rowStep, current.col);
+    pathVerticalFirst.append(current);
+  }
+
+  for(int i = 0; i < absColDiff; i++) { 
+    current = BoardCoord(current.row, current.col + colStep);
+    pathVerticalFirst.append(current);
+  }
+
+  paths.push_back(pathVerticalFirst);
+
+  Path pathHorizontalFirst;
+  current = from;
+ 
+  for(int i = 0; i < absColDiff; i++) { 
+    current = BoardCoord(current.row, current.col + colStep);
+    pathHorizontalFirst.append(current);
+  }
+
+  for(int i = 0; i < absRowDiff; i++) { 
+    current = BoardCoord(current.row + rowStep, current.col);
+    pathHorizontalFirst.append(current);
+  }
+
+  paths.push_back(pathHorizontalFirst);
+
+  return paths;
+}
+
+//Bishop path: Diagonal only
+std::vector<Path> generateBishopPath(const BoardCoord& from, const BoardCoord& to) { 
+  std::vector<Path> paths;
+  paths.push_back(generateDiagonalPath(from, to));
+  return paths;
+}
+
+//Rook path: Orthogonal only
+std::vector<Path> generateRookPath(const BoardCoord& from, const BoardCoord& to) { 
+  std::vector<Path> paths;
+  paths.push_back(generateOrthogonalPath(from, to));
+  return paths;
+}
+
+//Queen path: Orthogonal or Diagonal depending on move
+std::vector<Path> generateQueenPath(const BoardCoord& from, const BoardCoord& to) { 
+  std::vector<Path> paths;
+  int rowDiff = std::abs(to.row - from.row);
+  int colDiff = std::abs(to.col - from.col);
+
+  if(rowDiff == colDiff) {
+    paths.push_back(generateDiagonalPath(from, to));
+  } else {
+    paths.push_back(generateOrthogonalPath(from, to));
+  }
+
+  return paths;
+}
+
+//King path: Single square move
+std::vector<Path> generateKingPath(const BoardCoord&, const BoardCoord& to) {
+  std::vector<Path> paths;
+  Path path;
+  path.append(to);
+  paths.push_back(path);
+  return paths;
+}
+
+std::vector<Path> generatePath(const PhysicalMove& move) {
+  switch(move.pieceType) { 
+    case PAWN:
+      return generatePawnPath(move.from, move.to);
+    case KNIGHT:
+      return generateKnightPath(move.from, move.to);
+    case BISHOP:
+      return generateBishopPath(move.from, move.to);
+    case ROOK:
+      return generateRookPath(move.from, move.to);
+    case QUEEN:
+      return generateQueenPath(move.from, move.to);
+    case KING:
+      return generateKingPath(move.from, move.to);
+    //unknown piece type, try to infer from movement pattern
+    default: 
+      {
+        int rowDiff = std::abs(move.to.row - move.from.row);
+        int colDiff = std::abs(move.to.col - move.from.col);
+        
+        //assume knight
+        if((rowDiff == 2 && colDiff == 1) || (rowDiff == 1 && colDiff == 2)) { 
+          return generateKnightPath(move.from, move.to);
+        } 
+        //assume diagonal pattern
+        else if(rowDiff == colDiff) { 
+          return generateBishopPath(move.from, move.to);
+        }
+        //assume orthogonal pattern
+        else {
+          return generateRookPath(move.from, move.to);
+        }
+      }
+  }
+}
+
