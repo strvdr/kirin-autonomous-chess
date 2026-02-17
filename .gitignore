@@ -58,9 +58,6 @@ cmake_install.cmake
 Makefile
 *.cmake
 
-# Compiled executable
-kirin
-
 # Object files
 *.o
 *.obj
