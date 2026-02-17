@@ -1,5 +1,4 @@
 name: Kirin CI
-
 on:
   push:
     branches: [main, develop]
@@ -9,17 +8,20 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
       - name: Configure CMake
-        run: cmake -B engine/build -S engine
-      
+        run: cmake -B kirin/build -S kirin -DCMAKE_BUILD_TYPE=Release
+
       - name: Build
-        run: cmake --build engine/build
-      
+        run: cmake --build kirin/build --parallel
+
+      - name: Run unit tests
+        run: ctest --test-dir kirin/build --output-on-failure
+
       - name: Run perft test
         run: |
-          echo -e "position startpos\ngo perft 5\nquit" | ./engine/build/kirin
+          echo -e "position startpos\ngo perft 5\nquit" | ./kirin/build/kirin
