@@ -157,6 +157,7 @@ class GrblController {
 private:
     int serialFd;
     bool connected;
+    bool dryRunMode;           // If true, print G-code instead of sending to serial
     Position currentPos;
     bool magnetEngaged;
     
@@ -179,6 +180,17 @@ public:
     bool connect(const char* port, int baudRate = 115200);
     void disconnect();
     bool isConnected() const { return connected; }
+    
+    /**
+     * Enable dry-run mode: no serial port is required. Every G-code command
+     * that would be sent to GRBL is printed to stdout instead. The full
+     * planning and G-code generation pipeline runs normally so you can audit
+     * every command before powering the gantry.
+     * 
+     * Call this instead of connect() when you have no hardware attached.
+     */
+    void enableDryRun();
+    bool isDryRun() const { return dryRunMode; }
     
     // Command execution
     bool sendCommand(const std::string& cmd);

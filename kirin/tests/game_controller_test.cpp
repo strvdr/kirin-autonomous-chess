@@ -376,6 +376,128 @@ static void testEngineToPhysicalMove() {
     TEST_ASSERT(npm.to.row   == 5 && npm.to.col   == 5, "f3 to   → row 5, col 5");
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// 10. Restoration paths via engine->physical pipeline
+//     Verifies that planMove() populates restoration.path for moves that
+//     require blocker relocation, and that paths are geometrically correct.
+// ──────────────────────────────────────────────────────────────────────────
+static void testRestorationPathsViaEngine() {
+    printHeader("Restoration paths (engine -> physical pipeline)");
+
+    // Test 1: Knight from starting position -- all restoration paths populated
+    {
+        loadFEN(startPosition);
+        GameController gc;
+        gc.syncWithEngine();
+
+        // Ng1-f3: g1=sq62, f3=sq45
+        int engineMove = encodeMove(62, 45, N, 0, 0, 0, 0, 0);
+        PhysicalMove pm = engineToPhysicalMove(engineMove);
+        MovePlan plan = planMove(const_cast<PhysicalBoard&>(gc.getPhysicalBoard()), pm);
+
+        TEST_ASSERT(plan.isValid, "Ng1-f3 from start valid");
+        TEST_ASSERT(plan.restorations.size() == plan.relocations.size(),
+                    "restoration count matches relocation count");
+
+        bool allPopulated = true;
+        for (const RelocationPlan& r : plan.restorations)
+            if (r.path.empty()) { allPopulated = false; break; }
+        TEST_ASSERT(allPopulated, "all restoration paths populated for Ng1-f3");
+    }
+
+    // Test 2: Rook with two explicit blockers -- paths non-empty, endpoints correct
+    {
+        PhysicalBoard board;
+        board.setOccupancy(parseBoardPosition("Ra1 Pb1 Pc1"));
+
+        PhysicalMove pm(BoardCoord::fromFEN("a1"), BoardCoord::fromFEN("e1"), ROOK, false);
+        MovePlan plan = planMove(board, pm);
+
+        TEST_ASSERT(plan.isValid, "Ra1-e1 with 2 blockers valid");
+        TEST_ASSERT(plan.relocations.size() == 2, "2 relocations (b1,c1)");
+        TEST_ASSERT(plan.restorations.size() == 2, "2 restorations (b1,c1)");
+
+        if (plan.restorations.size() == 2) {
+            bool allNonEmpty = true;
+            bool endpointsCorrect = true;
+            for (size_t i = 0; i < 2; i++) {
+                const RelocationPlan& r = plan.restorations[i];
+                if (r.path.empty()) { allNonEmpty = false; continue; }
+                const BoardCoord& last = r.path.squares[r.path.length() - 1];
+                if (last != r.to) endpointsCorrect = false;
+            }
+            TEST_ASSERT(allNonEmpty, "both restoration paths non-empty");
+            TEST_ASSERT(endpointsCorrect,
+                        "restoration path endpoints match original squares");
+        }
+    }
+
+    // Test 3: Destination square must not appear mid-path in any restoration.
+    // Ra1->h1 with blocker on g1. After the move h1 is occupied by the rook;
+    // g1's piece must route home without passing through h1.
+    {
+        PhysicalBoard board;
+        board.setOccupancy(parseBoardPosition("Ra1 Pg1"));
+
+        PhysicalMove pm(BoardCoord::fromFEN("a1"), BoardCoord::fromFEN("h1"), ROOK, false);
+        MovePlan plan = planMove(board, pm);
+
+        TEST_ASSERT(plan.isValid, "Ra1-h1 with g1 blocker valid");
+        TEST_ASSERT(plan.restorations.size() == 1, "1 restoration for g1");
+
+        if (!plan.restorations.empty() && !plan.restorations[0].path.empty()) {
+            BoardCoord h1(7, 7);
+            bool avoidsH1 = true;
+            const Path& p = plan.restorations[0].path;
+            // Exclude the final square (the destination itself)
+            for (int i = 0; i < p.length() - 1; i++) {
+                if (p.squares[i] == h1) { avoidsH1 = false; break; }
+            }
+            TEST_ASSERT(avoidsH1, "restoration path avoids h1 (rook is there now)");
+        }
+    }
+
+    // Test 4: No blockers -- restoration list must be empty
+    {
+        loadFEN(startPosition);
+        GameController gc;
+        gc.syncWithEngine();
+
+        // e2(52)->e4(36), clear pawn push
+        int engineMove = encodeMove(52, 36, P, 0, 0, 1, 0, 0);
+        PhysicalMove pm = engineToPhysicalMove(engineMove);
+        MovePlan plan = planMove(const_cast<PhysicalBoard&>(gc.getPhysicalBoard()), pm);
+
+        TEST_ASSERT(plan.isValid,              "e2-e4 from start valid");
+        TEST_ASSERT(plan.relocations.empty(),  "e2-e4 has no relocations");
+        TEST_ASSERT(plan.restorations.empty(), "e2-e4 has no restorations");
+    }
+
+    // Test 5: Capture -- captured square must not be a restoration destination.
+    // Ra1 captures pa5 through blockers a2,a3,a4. a5 is vacated; restorations
+    // should only target a2, a3, a4.
+    {
+        PhysicalBoard board;
+        board.setOccupancy(parseBoardPosition("Ra1 Pa2 Pa3 Pa4 pa5"));
+
+        PhysicalMove pm(BoardCoord::fromFEN("a1"), BoardCoord::fromFEN("a5"), ROOK, true);
+        MovePlan plan = planMove(board, pm);
+
+        TEST_ASSERT(plan.isValid, "Ra1xa5 capture through 3 blockers valid");
+        TEST_ASSERT(plan.relocations.size() == 3, "3 blockers (a2,a3,a4)");
+        TEST_ASSERT(plan.restorations.size() == 3, "3 restorations");
+
+        if (plan.restorations.size() == 3) {
+            BoardCoord a5 = BoardCoord::fromFEN("a5");
+            bool noReturnToA5 = true;
+            for (const RelocationPlan& r : plan.restorations)
+                if (r.to == a5) { noReturnToA5 = false; break; }
+            TEST_ASSERT(noReturnToA5,
+                        "no restoration targets a5 (captured piece was there)");
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────
@@ -394,6 +516,7 @@ int main() {
     testGameFlow();
     testHardwareGating();
     testEngineToPhysicalMove();
+    testRestorationPathsViaEngine();
 
     printf("\n" ANSI_BOLD "═══ Results: %d/%d passed" ANSI_RESET, testsPassed, testsRun);
     if (testsFailed > 0) {

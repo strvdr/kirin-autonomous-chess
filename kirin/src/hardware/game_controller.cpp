@@ -79,7 +79,10 @@ GameController::GameController()
 }
 
 GameController::~GameController() {
-    // Ensure we disconnect cleanly
+    // In dry-run mode there is no real connection — nothing to clean up.
+    if (gantry.isDryRun()) return;
+    
+    // Ensure we disconnect cleanly from real hardware
     if (gantry.isConnected()) {
         gantry.setMagnet(false);  // Safety: ensure magnet is off
         gantry.disconnect();

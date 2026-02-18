@@ -574,6 +574,185 @@ void testAStarPathfinding() {
   }
 }
 
+/************ Restoration Path Tests ************/
+void testRestorationPaths() {
+  TEST_SECTION("Restoration Path Computation");
+
+  // -------------------------------------------------------
+  // Test 1: Single blocker — simple case
+  //
+  // Ra1 wants to move to e1. Pb1 is the only blocker.
+  // After the rook reaches e1, b1 must restore from its
+  // parking spot back to b1. The path should be non-empty.
+  // -------------------------------------------------------
+  {
+    PhysicalBoard board;
+    board.setOccupancy(parseBoardPosition("Ra1 Pb1"));
+
+    PhysicalMove move = createMove("a1e1", ROOK);
+    MovePlan plan = planMove(board, move);
+
+    printf("  Ra1-e1 (1 blocker): ");
+    printTestMove(plan);
+
+    TEST_ASSERT(plan.isValid, "Ra1-e1 with one blocker should be valid");
+    TEST_ASSERT(plan.restorations.size() == 1, "should have 1 restoration");
+
+    if (plan.restorations.size() == 1) {
+      const RelocationPlan& r = plan.restorations[0];
+      TEST_ASSERT(!r.path.empty(), "restoration path should be non-empty");
+      // The restoration destination should be b1 (the original blocker square)
+      TEST_ASSERT(r.to == plan.relocations[0].from, "restoration returns to original square");
+
+      // Path endpoint must be the destination square
+      if (!r.path.empty()) {
+        const BoardCoord& last = r.path.squares[r.path.length() - 1];
+        TEST_ASSERT(last == r.to, "restoration path endpoint matches destination");
+      }
+    }
+  }
+
+  // -------------------------------------------------------
+  // Test 2: Three blockers — restoration order is reversed
+  //
+  // Ra1 moves to e1. Blockers b1, c1, d1 are relocated in
+  // that order. Restorations must be d1, c1, b1 (reverse)
+  // and each path must be non-empty.
+  // -------------------------------------------------------
+  {
+    PhysicalBoard board;
+    board.setOccupancy(parseBoardPosition("Ra1 Pb1 Pc1 Pd1"));
+
+    PhysicalMove move = createMove("a1e1", ROOK);
+    MovePlan plan = planMove(board, move);
+
+    printf("  Ra1-e1 (3 blockers): ");
+    printTestMove(plan);
+
+    TEST_ASSERT(plan.isValid, "Ra1-e1 with 3 blockers should be valid");
+    TEST_ASSERT(plan.relocations.size() == 3, "should have 3 relocations");
+    TEST_ASSERT(plan.restorations.size() == 3, "should have 3 restorations");
+
+    if (plan.restorations.size() == 3) {
+      bool allPathsPopulated = true;
+      bool correctOrder = true;
+      bool correctEndpoints = true;
+
+      for (size_t i = 0; i < 3; i++) {
+        const RelocationPlan& r = plan.restorations[i];
+        if (r.path.empty()) allPathsPopulated = false;
+
+        // Each restoration should return the piece to its original square
+        // (which is the 'from' of the corresponding relocation in reverse)
+        if (r.to != plan.relocations[2 - i].from) correctOrder = false;
+
+        // Path endpoint must be the destination
+        if (!r.path.empty()) {
+          const BoardCoord& last = r.path.squares[r.path.length() - 1];
+          if (last != r.to) correctEndpoints = false;
+        }
+      }
+
+      TEST_ASSERT(allPathsPopulated, "all 3 restoration paths should be non-empty");
+      TEST_ASSERT(correctOrder, "restorations are in reverse relocation order");
+      TEST_ASSERT(correctEndpoints, "all restoration path endpoints match destinations");
+    }
+  }
+
+  // -------------------------------------------------------
+  // Test 3: Post-primary-move board state is correct
+  //
+  // Ra1 moves to h1. Pg1 is a blocker. After the move,
+  // h1 is occupied by the rook — the restoration path for
+  // g1's piece must NOT pass through h1.
+  // -------------------------------------------------------
+  {
+    PhysicalBoard board;
+    board.setOccupancy(parseBoardPosition("Ra1 Pg1"));
+
+    PhysicalMove move = createMove("a1h1", ROOK);
+    MovePlan plan = planMove(board, move);
+
+    printf("  Ra1-h1 (blocker on g1, rook lands on h1): ");
+    printTestMove(plan);
+
+    TEST_ASSERT(plan.isValid, "Ra1-h1 should be valid");
+    TEST_ASSERT(plan.restorations.size() == 1, "should have 1 restoration");
+
+    if (plan.restorations.size() == 1 && !plan.restorations[0].path.empty()) {
+      // h1 = row 7, col 7 — rook is there after the move; path must not pass through it
+      BoardCoord h1(7, 7);
+      bool pathAvoidsH1 = true;
+      const Path& p = plan.restorations[0].path;
+      // Check intermediate squares only (exclude the destination)
+      for (int i = 0; i < p.length() - 1; i++) {
+        if (p.squares[i] == h1) { pathAvoidsH1 = false; break; }
+      }
+      TEST_ASSERT(pathAvoidsH1, "restoration path should not pass through h1 (occupied by rook)");
+    }
+  }
+
+  // -------------------------------------------------------
+  // Test 4: No blockers — restorations list is empty
+  //
+  // A clear move should produce an empty restorations list,
+  // not a list of empty-path entries.
+  // -------------------------------------------------------
+  {
+    PhysicalBoard board;
+    board.setOccupancy(parseBoardPosition("Ra1"));
+
+    PhysicalMove move = createMove("a1h1", ROOK);
+    MovePlan plan = planMove(board, move);
+
+    printf("  Ra1-h1 (clear path): ");
+    printTestMove(plan);
+
+    TEST_ASSERT(plan.isValid, "clear Ra1-h1 should be valid");
+    TEST_ASSERT(plan.restorations.empty(), "no blockers means no restorations");
+  }
+
+  // -------------------------------------------------------
+  // Test 5: Multi-blocker with obstructed return
+  //
+  // A rook on d1 moves to d8 through two blockers (d4, d6).
+  // After the primary move, d8 is occupied. Both pieces must
+  // find their way back to d6 and d4 respectively. The
+  // paths should be non-empty and each should end at the
+  // correct original square.
+  // -------------------------------------------------------
+  {
+    PhysicalBoard board;
+    board.setOccupancy(parseBoardPosition("Rd1 Pd4 Pd6"));
+
+    PhysicalMove move = createMove("d1d8", ROOK);
+    MovePlan plan = planMove(board, move);
+
+    printf("  Rd1-d8 (blockers on d4 and d6): ");
+    printTestMove(plan);
+
+    TEST_ASSERT(plan.isValid, "Rd1-d8 with 2 blockers should be valid");
+    TEST_ASSERT(plan.restorations.size() == 2, "should have 2 restorations");
+
+    if (plan.restorations.size() == 2) {
+      bool allNonEmpty = true;
+      bool allEndCorrectly = true;
+
+      for (size_t i = 0; i < 2; i++) {
+        const RelocationPlan& r = plan.restorations[i];
+        if (r.path.empty()) allNonEmpty = false;
+        if (!r.path.empty()) {
+          const BoardCoord& last = r.path.squares[r.path.length() - 1];
+          if (last != r.to) allEndCorrectly = false;
+        }
+      }
+
+      TEST_ASSERT(allNonEmpty, "both restoration paths should be non-empty");
+      TEST_ASSERT(allEndCorrectly, "both restoration paths should end at original squares");
+    }
+  }
+}
+
 /************ Main ************/
 int main() {
   printf("\n");
@@ -587,6 +766,7 @@ int main() {
   testNestedBlockers();
   testEdgeCases();
   testAStarPathfinding();
+  testRestorationPaths();
   
   // Print summary
   printf("\n");

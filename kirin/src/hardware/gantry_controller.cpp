@@ -267,9 +267,17 @@ std::vector<std::string> generateNewGameSetup() {
 /************ GRBL Controller Implementation ************/
 
 GrblController::GrblController() 
-    : serialFd(-1), connected(false), currentPos(0, 0), magnetEngaged(false),
+    : serialFd(-1), connected(false), dryRunMode(false),
+      currentPos(0, 0), magnetEngaged(false),
       whitePawnsCaptured(0), whitePiecesCaptured(0),
       blackPawnsCaptured(0), blackPiecesCaptured(0) {
+}
+
+void GrblController::enableDryRun() {
+    dryRunMode = true;
+    connected = true;  // Bypass all isConnected() guards
+    printf("[DRY-RUN] Dry-run mode enabled. No serial connection will be made.\n");
+    printf("[DRY-RUN] All G-code will be printed to stdout.\n");
 }
 
 GrblController::~GrblController() {
@@ -419,9 +427,115 @@ std::string GrblController::readLine(int timeoutMs) {
     return line;
 }
 
+// Human-readable GRBL error descriptions (error codes 1-38 per GRBL 1.1 docs)
+static const char* grblErrorDescription(int code) {
+    switch (code) {
+        case  1: return "G-code words consist of a letter and a value; letter was not found";
+        case  2: return "Numeric value format is not valid or missing";
+        case  3: return "Grbl '$' system command was not recognized";
+        case  4: return "Negative value received for an expected positive value";
+        case  5: return "Homing cycle is not enabled via settings";
+        case  6: return "Minimum step pulse time must be greater than 3 usec";
+        case  7: return "EEPROM read failed – reset and restored to defaults";
+        case  8: return "'$' command cannot be used unless Grbl is IDLE";
+        case  9: return "G-code locked out during alarm or jog state";
+        case 10: return "Soft limits cannot be enabled without homing also enabled";
+        case 11: return "Max characters per line exceeded (70 chars)";
+        case 12: return "Grbl '$' setting value exceeds the maximum step rate supported";
+        case 13: return "Safety door detected as opened and door state initiated";
+        case 14: return "Build info or startup line exceeded EEPROM line length limit";
+        case 15: return "Jog target exceeds machine travel; jog command ignored";
+        case 16: return "Jog command with no '=' or contains prohibited g-code";
+        case 17: return "Laser mode requires PWM output";
+        case 20: return "Unsupported or invalid g-code command found in block";
+        case 21: return "More than one g-code command from same modal group in block";
+        case 22: return "Feed rate has not yet been set or is undefined";
+        case 23: return "G-code command in block requires an integer value";
+        case 24: return "Two G-code commands that both require the use of the XYZ axis words were detected in the block";
+        case 25: return "A G-code word was repeated in the block";
+        case 26: return "A G-code command implicitly or explicitly requires XYZ axis words in the block, but none were detected";
+        case 27: return "N line number value is not within the valid range of 1-9,999,999";
+        case 28: return "A G-code command was sent, but is missing some required P or L words in the line";
+        case 29: return "Grbl supports six work coordinate systems G54-G59; G59.1, G59.2, and G59.3 are not supported";
+        case 30: return "The G53 G-code command requires either a G0 seek or G1 feed motion mode to be active";
+        case 31: return "There are unused axis words in the block and G80 cycle cancellation is missing";
+        case 32: return "A G2 or G3 arc was detected and does not have purely XY planar motion";
+        case 33: return "The motion command has an invalid target; G2, G3, and G38.2 arcs cannot be defined";
+        case 34: return "A G2 or G3 arc, defined with the radius equation, had an error due to the computed arc radius";
+        case 35: return "The G35 or G38.x probing cycle failed to trigger within the machine travel";
+        case 36: return "The probe did not contact the workpiece within the programmed travel";
+        case 37: return "Probe protection feature triggered during probing";
+        case 38: return "Spindle control G-code (M3, M4, M5) is not supported in current state";
+        default: return "Unknown error";
+    }
+}
+
+// Human-readable GRBL alarm descriptions (alarm codes 1-11 per GRBL 1.1 docs)
+static const char* grblAlarmDescription(int code) {
+    switch (code) {
+        case  1: return "Hard limit triggered – machine position is likely lost";
+        case  2: return "G-code motion target exceeds machine travel; motion aborted";
+        case  3: return "Reset while in motion; position lost, re-home required";
+        case  4: return "Probe fail: the probe is not in the expected initial state";
+        case  5: return "Probe fail: probe did not contact workpiece within travel";
+        case  6: return "Homing fail: the active homing cycle was reset";
+        case  7: return "Homing fail: safety door was opened during homing";
+        case  8: return "Homing fail: cycle failed to clear the limit switch after pulling off";
+        case  9: return "Homing fail: could not find limit switch within search distance";
+        case 10: return "Homing fail: second dual-axis limit switch not found within search distance";
+        case 11: return "Homing fail: axis travel is below the minimum pull-off distance";
+        default: return "Unknown alarm";
+    }
+}
+
 bool GrblController::waitForOk(int timeoutMs) {
-    std::string response = readLine(timeoutMs);
-    return (response == "ok");
+    // GRBL may emit informational lines (e.g. "[MSG:...]") before the real
+    // response, so we loop until we see "ok", "error:N", "ALARM:N", or timeout.
+    while (true) {
+        std::string response = readLine(timeoutMs);
+
+        if (response.empty()) {
+            // Timeout – readLine returned nothing within the window
+            fprintf(stderr, "[GRBL] Timeout waiting for response (no data received)\n");
+            return false;
+        }
+
+        if (response == "ok") {
+            return true;
+        }
+
+        if (response.substr(0, 6) == "error:") {
+            int code = 0;
+            if (response.length() > 6) {
+                code = std::stoi(response.substr(6));
+            }
+            fprintf(stderr, "[GRBL] error:%d – %s\n", code, grblErrorDescription(code));
+            return false;
+        }
+
+        if (response.substr(0, 6) == "ALARM:") {
+            int code = 0;
+            if (response.length() > 6) {
+                code = std::stoi(response.substr(6));
+            }
+            fprintf(stderr, "[GRBL] ALARM:%d – %s\n", code, grblAlarmDescription(code));
+            fprintf(stderr, "[GRBL] Issuing soft-reset (Ctrl-X) to clear alarm state. Re-home before resuming.\n");
+            // Soft reset: send 0x18, then flush the response lines
+            char resetCmd = 0x18;
+            write(serialFd, &resetCmd, 1);
+            // Drain any lines GRBL emits after the reset (typically "Grbl 1.1x ...")
+            for (int i = 0; i < 5; ++i) {
+                std::string drain = readLine(500);
+                if (!drain.empty()) {
+                    fprintf(stderr, "[GRBL] (post-reset) %s\n", drain.c_str());
+                }
+            }
+            return false;
+        }
+
+        // Informational / feedback lines – print and keep waiting
+        fprintf(stderr, "[GRBL] info: %s\n", response.c_str());
+    }
 }
 
 #else
@@ -450,7 +564,31 @@ bool GrblController::waitForOk(int) {
 
 #endif
 
+// Annotate a G-code command for dry-run output
+static const char* annotateGcode(const std::string& cmd) {
+    if (cmd == "M3")                    return "  ; MAGNET ON";
+    if (cmd == "M5")                    return "  ; MAGNET OFF";
+    if (cmd == "$H")                    return "  ; HOME (seek limit switches)";
+    if (cmd.substr(0, 2) == "G4")       return "  ; DWELL (settle)";
+    if (cmd.substr(0, 2) == "G1")       return "  ; MOVE";
+    return "";
+}
+
 bool GrblController::sendCommand(const std::string& cmd) {
+    if (dryRunMode) {
+        printf("  %-30s%s\n", cmd.c_str(), annotateGcode(cmd));
+        // Update local state so position tracking stays accurate
+        if (cmd.substr(0, 2) == "G1") {
+            double x = currentPos.x, y = currentPos.y;
+            sscanf(cmd.c_str(), "G1 X%lf Y%lf", &x, &y);
+            currentPos = Position(x, y);
+        } else if (cmd == "M3") {
+            magnetEngaged = true;
+        } else if (cmd == "M5") {
+            magnetEngaged = false;
+        }
+        return true;
+    }
     if (!send(cmd)) return false;
     return waitForOk();
 }
@@ -465,6 +603,11 @@ bool GrblController::sendCommands(const std::vector<std::string>& cmds) {
 }
 
 bool GrblController::home() {
+    if (dryRunMode) {
+        printf("[DRY-RUN] $H                          ; HOME gantry to (0,0)\n");
+        currentPos = Position(0, 0);
+        return true;
+    }
     return sendCommand("$H");
 }
 

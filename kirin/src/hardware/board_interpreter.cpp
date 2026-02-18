@@ -678,13 +678,23 @@ MovePlan planMove(PhysicalBoard& board, const PhysicalMove& move) {
     }
   }
 
-  //step 6: build restorations(reverse order of relocations? (hopefully this approach works))
+  //step 6: build restorations (reverse order of relocations)
+  // First, apply the primary move to tempBoard so restoration paths
+  // are computed against the correct post-move board state
+  tempBoard.movePiece(move.from, move.to);
+
   for(int i = static_cast<int>(plan.relocations.size()) - 1; i >= 0; i--) { 
     RelocationPlan restoration;
     restoration.from = plan.relocations[i].to; //from parking spot
     restoration.to = plan.relocations[i].from; //to original position
 
-    //path will be computed during execution
+    restoration.path = findClearPath(tempBoard, restoration.from, restoration.to);
+    // Note: if no clear path exists the path will be empty; gantry_controller
+    // will fall back to a direct move (same behaviour as before this change)
+
+    // Update tempBoard so subsequent restorations see already-returned pieces
+    tempBoard.movePiece(restoration.from, restoration.to);
+
     plan.restorations.push_back(restoration);
   }
 
@@ -735,7 +745,12 @@ void printMovePlan(const MovePlan& plan) {
   for(size_t i = 0; i < plan.restorations.size(); i++) {
     plan.restorations[i].from.toFEN(fromFen);
     plan.restorations[i].to.toFEN(toFen);
-    printf("  %zu. %s -> %s (path computed at execution time)\n", i + 1, fromFen, toFen);
+    printf("  %zu. %s -> %s: ", i + 1, fromFen, toFen);
+    if (plan.restorations[i].path.empty()) {
+      printf("(no path found - will use direct move)\n");
+    } else {
+      printPath(plan.restorations[i].path);
+    }
   }
   
   printf("=================\n\n");
@@ -763,4 +778,3 @@ Bitboard parseBoardPosition(const char* pieces) {
   }
   return occ;
 }
-
