@@ -129,7 +129,7 @@ int manhattanDistance(const BoardCoord& from, const BoardCoord& to) {
   return rowDiff + colDiff; 
 }
 
-int countBits(Bitboard bb) { 
+int bb_countBits(Bitboard bb) { 
   int count = 0;
   while(bb) { 
     count++;
@@ -138,7 +138,7 @@ int countBits(Bitboard bb) {
   return count;
 }
 
-int getLSB(Bitboard bb) {
+int bb_getLSB(Bitboard bb) {
   if(!bb) return -1;
 
   //count trailing zeros

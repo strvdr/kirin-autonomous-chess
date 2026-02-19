@@ -206,8 +206,8 @@ inline bool bb_getBit(Bitboard bb, int square) {
   return (bb & (1ULL << square)) != 0;
 }
 
-int countBits(Bitboard bb);
-int getLSB(Bitboard bb);
+int bb_countBits(Bitboard bb);
+int bb_getLSB(Bitboard bb);
 
 /************ Path Generation ************/
 //Generate all possible paths for a piece to move (some have multiple options)
