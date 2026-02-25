@@ -1,0 +1,44 @@
+name: Test Report
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential python3
+
+      - name: Configure CMake
+        run: cmake -S kirin -B kirin/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build all targets
+        run: cmake --build kirin/build --parallel
+
+      - name: Generate test report
+        run: cmake --build kirin/build --target test_report
+
+      - name: Commit and push updated report
+        # Only commit on pushes to main, not on pull requests
+        if: github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add kirin/tests/TEST_RESULTS.md
+          git diff --cached --quiet || git commit -m "ci: update test results [skip ci]"
+          git push

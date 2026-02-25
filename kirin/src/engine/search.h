@@ -46,6 +46,12 @@ int quiescence(int alpha, int beta);
 int negamax(int alpha, int beta, int depth);
 void searchPosition(int depth);
 
+/************ Skill / Difficulty ************/
+// 0 = easy (depth 3, ±150cp noise)
+// 1 = medium (depth 5, ±50cp noise)
+// 2 = hard (depth 64, no noise)
+extern int skillLevel;
+
 /************ Debug Functions ************/
 void printMoveScores(moves *moveList);
 

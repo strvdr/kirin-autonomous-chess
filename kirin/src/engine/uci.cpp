@@ -171,6 +171,7 @@ void uciLoop() {
     
     printf("id name Kirin\n");
     printf("id author Strydr Silverberg\n");
+    printf("option name Skill Level type spin default 2 min 0 max 2\n");
     printf("uciok\n");
     
     while (1) {
@@ -202,10 +203,18 @@ void uciLoop() {
         else if (strncmp(input, "quit", 4) == 0) {
             break;
         }
-        else if (strncmp(input, "uci", 3) == 0) {
+        if (strncmp(input, "uci", 3) == 0) {
             printf("id name Kirin\n");
             printf("id author Strydr Silverberg\n");
+            printf("option name Skill Level type spin default 2 min 0 max 2\n");
             printf("uciok\n");
+        }
+        else if (strncmp(input, "setoption name Skill Level value", 32) == 0) {
+            int level = atoi(input + 33);
+            if (level < 0) level = 0;
+            if (level > 2) level = 2;
+            skillLevel = level;
+            printf("info string Skill Level set to %d\n", skillLevel);
         }
     }
 }
