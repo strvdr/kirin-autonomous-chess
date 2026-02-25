@@ -245,7 +245,6 @@ BoardCoord findParkingSpot(const PhysicalBoard& board, const BoardCoord& blocker
 Path findClearPath(const PhysicalBoard& board, const BoardCoord& from, const BoardCoord& to);
 
 /************ Move Planning ************/
-static bool planBlockerRelocation(PhysicalBoard& board, const BoardCoord& blockerPos, std::set<BoardCoord>& excludeSquares, std::vector<RelocationPlan>& relocations, int depth);
 //generate complete execution plan for a given chess move
 //handles blocker relocation, primary move, and restoration
 MovePlan planMove(PhysicalBoard& board, const PhysicalMove& move);

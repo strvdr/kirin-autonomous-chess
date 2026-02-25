@@ -55,6 +55,9 @@ int mvvLVA[12][12] = {
     100, 200, 300, 400, 500, 600,  100, 200, 300, 400, 500, 600
 };
 
+/************ Skill / Difficulty ************/
+int skillLevel = 2;  // Default: hard
+
 /************ Late Move Reduction Constants ************/
 static const int fullDepthMoves = 4;
 static const int reductionLimit = 3;
@@ -424,6 +427,14 @@ void searchPosition(int depth) {
     memset(pvTable, 0, sizeof(pvTable));
     memset(pvLength, 0, sizeof(pvLength));
     
+    // Cap search depth based on skill level
+    // Skill 0 (easy)   → max depth 3
+    // Skill 1 (medium) → max depth 5
+    // Skill 2 (hard)   → no cap (use caller-supplied depth)
+    static const int skillDepthCap[3] = { 3, 5, 64 };
+    int depthCap = skillDepthCap[skillLevel];
+    if (depth > depthCap) depth = depthCap;
+
     int alpha = -infinity;
     int beta = infinity;
     
@@ -467,8 +478,57 @@ void searchPosition(int depth) {
     
     // Print best move
     bestMove = pvTable[0][0];
+    
+    // At lower skill levels, inject noise into root move selection.
+    // We re-score the top moves with random perturbation and may pick
+    // a suboptimal one, simulating human-like mistakes.
+    // Skill 0 (easy):   ±150cp noise
+    // Skill 1 (medium): ±50cp noise
+    // Skill 2 (hard):   always pick the engine's best move
+    if (skillLevel < 2) {
+        static const int noiseRange[2] = { 150, 50 };
+        int range = noiseRange[skillLevel];
+        
+        // Regenerate the root move list
+        moves rootMoves[1];
+        generateMoves(rootMoves);
+        
+        int bestNoisy = -infinity - 1;
+        int noisyBest = bestMove;  // Fallback to engine best
+        
+        for (int i = 0; i < rootMoves->count; i++) {
+            int move = rootMoves->moves[i];
+            
+            // Only consider moves that appear in the PV table (legal, searched moves)
+            // We approximate by checking if this move matches one of the PV first moves
+            // across all completed depths. As a simpler proxy: just use all legal moves.
+            copyBoard();
+            ply = 0;
+            if (makeMove(move, allMoves) == 0) {
+                restoreBoard();
+                continue;
+            }
+            restoreBoard();
+            
+            // Score this move: use its order in the sorted list as a proxy for engine score,
+            // then add noise. For the PV (best) move we use the actual search score; for
+            // others we estimate relative to it via move ordering score.
+            int baseScore = (move == pvTable[0][0]) ? score : score - scoreMove(pvTable[0][0]) + scoreMove(move);
+            
+            // Add symmetric random noise in [-range, +range]
+            int noise = (int)(getRandU32() % (2 * range + 1)) - range;
+            int noisyScore = baseScore + noise;
+            
+            if (noisyScore > bestNoisy) {
+                bestNoisy = noisyScore;
+                noisyBest = move;
+            }
+        }
+        bestMove = noisyBest;
+    }
+    
     printf("bestmove ");
-    printMove(pvTable[0][0]);
+    printMove(bestMove);
     printf("\n");
     fflush(stdout);
 }

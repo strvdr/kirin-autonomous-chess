@@ -31,7 +31,11 @@ cmake_minimum_required(VERSION 3.10)
 #   │
 #   └── tests/
 #       ├── captured_piece_test.cpp
-#       └── board_interpreter_test.cpp
+#       ├── board_interpreter_test.cpp
+#       ├── game_controller_test.cpp
+#       ├── engine_test.cpp
+#       ├── generate_test_report.py   <- produces TEST_RESULTS.md
+#       └── TEST_RESULTS.md           <- auto-generated, commit to repo
 #
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -152,6 +156,33 @@ target_include_directories(game_controller_test PRIVATE
 target_link_libraries(game_controller_test PRIVATE kirin_hardware kirin_engine)
 add_test(NAME GameControllerTest COMMAND game_controller_test)
 
+# Engine validity and skill level test (engine-only)
+add_executable(engine_test tests/engine_test.cpp)
+target_include_directories(engine_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/engine
+)
+target_link_libraries(engine_test PRIVATE kirin_engine)
+add_test(NAME EngineTest COMMAND engine_test)
+
+# ============================================
+# Test Report (Markdown for GitHub)
+# ============================================
+# Runs all test binaries and writes tests/TEST_RESULTS.md
+# Usage: cmake --build build --target test_report
+add_custom_target(test_report
+    COMMAND ${CMAKE_COMMAND} -E echo "Generating test report..."
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/generate_test_report.py
+            --build-dir ${CMAKE_BINARY_DIR}
+            --output    ${CMAKE_SOURCE_DIR}/tests/TEST_RESULTS.md
+    DEPENDS
+        captured_piece_test
+        board_interpreter_test
+        game_controller_test
+        engine_test
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Running all tests and writing tests/TEST_RESULTS.md"
+)
+
 # ============================================
 # Optional: Install targets
 # ============================================
@@ -165,5 +196,7 @@ message(STATUS "=== KIRIN Build Configuration ===")
 message(STATUS "Engine sources:   ${CMAKE_SOURCE_DIR}/src/engine/")
 message(STATUS "Hardware sources: ${CMAKE_SOURCE_DIR}/src/hardware/")
 message(STATUS "Tests:            ${CMAKE_SOURCE_DIR}/tests/")
+message(STATUS "  captured_piece_test, board_interpreter_test,")
+message(STATUS "  game_controller_test, engine_test")
 message(STATUS "=================================")
 message(STATUS "")
