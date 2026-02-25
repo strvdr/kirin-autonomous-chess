@@ -4,7 +4,7 @@
       ,  ,
       \\ \\                 
       ) \\ \\    _p_        
-       )^\))\))  /  *\      KIRIN CHESS ENGINE v0.3
+       )^\))\))  /  *\      KIRIN CHESS ENGINE v0.3.1
         \_|| || / /^`-'     
  __       -\ \\--/ /          Author:      Strydr Silverberg
 <'  \\___/   ___. )'                        Colorado School of Mines, Class of 2026
@@ -86,7 +86,8 @@ Engine
   ├── Bitboard move generation (attacks.cpp, movegen.cpp)
   ├── Zobrist hashing (zobrist.cpp)
   ├── Alpha-beta search with iterative deepening (search.cpp)
-  └── Evaluation (evaluation.cpp)
+  ├── Evaluation (evaluation.cpp)
+  └── Difficulty system (skillLevel 0–2)
 ```
 
 ### Key Data Flow
@@ -105,6 +106,20 @@ searchPosition(depth)
 
 ---
 
+## Engine Difficulty
+
+The engine exposes three difficulty levels via the `skillLevel` global (set at startup or through the UCI interface). Each level adjusts both search depth and move selection behaviour.
+
+| Level | Name | Max Depth | Move Selection |
+|---|---|---|---|
+| 0 | Easy | 3 | Best scored move ± random noise up to 150cp |
+| 1 | Medium | 5 | Best scored move ± random noise up to 50cp |
+| 2 | Hard | 64 (unlimited) | Always the engine's top move — no noise |
+
+At levels 0 and 1, after the search completes, every legal root move is re-scored with a symmetric random perturbation. This causes the engine to occasionally prefer a suboptimal move, producing play that feels more natural for casual opponents rather than uniformly optimal. At level 2 the perturbation is zero and the engine always plays its principal variation.
+
+---
+
 ## Building
 
 The project uses CMake (3.10+) with a C++17 toolchain. Serial hardware support is conditionally compiled via the `HAS_SERIAL` preprocessor flag (set automatically on Linux).
@@ -117,6 +132,12 @@ kirin/
 │   ├── hardware/       Physical board control
 │   └── main.cpp
 └── tests/
+    ├── captured_piece_test.cpp
+    ├── board_interpreter_test.cpp
+    ├── game_controller_test.cpp
+    ├── engine_test.cpp
+    ├── generate_test_report.py
+    └── TEST_RESULTS.md
 ```
 
 ```bash
@@ -135,6 +156,9 @@ cmake --build .
 
 # Run tests
 ctest
+
+# Generate markdown test report (writes tests/TEST_RESULTS.md)
+cmake --build . --target test_report
 ```
 
 The CMake build produces three targets:
@@ -146,6 +170,27 @@ The CMake build produces three targets:
 | `kirin_hardware` | Static library — board interpreter + gantry controller (links engine) |
 
 Release builds are compiled with `-O3 -march=native -flto`. Debug builds use `-g -O0 -DDEBUG`.
+
+---
+
+## Testing
+
+The project has a comprehensive test suite covering all three layers. Tests are run via CTest and results are automatically published to [`tests/TEST_RESULTS.md`](tests/TEST_RESULTS.md) on every push to `main` via GitHub Actions.
+
+| Suite | Coverage | Tests |
+|---|---|---|
+| `captured_piece_test` | Move encoding — captured-piece bit-field, flag isolation, bit-position overlap | 10 |
+| `board_interpreter_test` | Path planning, blocker relocation/restoration, knight routing, A\* pathfinding, nested blockers, edge cases | 62 |
+| `game_controller_test` | Coordinate conversion, piece-type mapping, PhysicalBoard sync, `parseBoardMove`, `isGameOver`, hardware-gated functions | 235 |
+| `engine_test` | Perft node counts (4 positions × up to depth 4), evaluation sanity, tactical position structure, skill-level globals, repetition detection | 40+ |
+
+### Test design notes
+
+The engine test suite avoids calling `searchPosition()` directly. In a CTest subprocess stdin is connected to `/dev/null`, which the engine's `communicate()` function interprets as a stop signal, setting `stopped = 1` and corrupting all subsequent search results. Instead, engine correctness is verified through:
+
+- **Perft** — recursive legal-node counts matched against published ground truth (chessprogramming.org) for four standard positions including Kiwipete
+- **`evaluate()`** — direct calls to check sign, symmetry, and material ordering
+- **`generateMoves()` / `makeMove()`** — used to verify tactical positions structurally: checkmate and stalemate are confirmed by `perft(1) == 0` combined with `isAttacked()`, specific moves are confirmed present or absent in the legal move list
 
 ---
 
@@ -227,7 +272,7 @@ Example dry-run output:
 | `attacks.h/.cpp` | Attack table generation (magic bitboards) |
 | `bitboard.h/.cpp` | Bitboard primitives and utilities |
 | `movegen.h/.cpp` | Legal move generation |
-| `search.h/.cpp` | Alpha-beta search, iterative deepening |
+| `search.h/.cpp` | Alpha-beta search, iterative deepening, difficulty system |
 | `evaluation.h/.cpp` | Static position evaluation |
 | `position.h/.cpp` | Board state, FEN parsing |
 | `zobrist.h/.cpp` | Zobrist hashing for transposition table |
@@ -248,9 +293,11 @@ Example dry-run output:
 
 | File | Coverage |
 |---|---|
+| `captured_piece_test.cpp` | Move encoding — captured-piece bit-field round-trips |
+| `board_interpreter_test.cpp` | Path planning, blocker handling, A\* pathfinding |
 | `game_controller_test.cpp` | Move encoding/decoding, coordinate conversion, physical board state, special moves |
-| `board_interpreter_test.cpp` | Path planning, blocker handling, coordinate math |
-| `captured_piece_test.cpp` | Capture zone slot assignment and tracking |
+| `engine_test.cpp` | Perft, evaluation sanity, tactical positions, skill level, repetition detection |
+| `generate_test_report.py` | Runs all binaries and writes `TEST_RESULTS.md` |
 
 ---
 
@@ -288,6 +335,9 @@ Pawns and back-rank pieces occupy separate columns within each zone. The control
 | Dry run mode (engine-vs-engine) | ✅ Verified |
 | Simulation mode | ✅ Complete |
 | Serial / GRBL integration | ✅ Complete |
+| Engine difficulty system (Easy / Medium / Hard) | ✅ Complete |
+| Comprehensive test suite (307+ assertions) | ✅ Complete |
+| CI test report via GitHub Actions | ✅ Complete |
 | Physical board testing | 🔧 In progress |
 | En passant path planning | 🔧 In progress |
 | Promotion handling | 🔧 In progress |
@@ -301,4 +351,4 @@ This prototype applies engineering principles and computer science fundamentals 
 
 ---
 
-*Kirin v0.3 — Colorado School of Mines, 2026*
+*Kirin v0.3.1 — Colorado School of Mines, 2026*
