@@ -1,17 +1,30 @@
-/*
- * Kirin Chess Engine
- * game_controller.h - Integration layer between engine and physical board
- * 
- * This module bridges the chess engine's internal representation with the
- * physical board interpreter and gantry controller. It handles:
- * - Converting engine move encoding to physical moves
- * - Converting engine piece types to physical piece types
- * - Orchestrating move execution on the physical board
- * - Special move handling (castling, en passant, promotion)
- * 
- * IMPORTANT: This header is designed to be included AFTER board_interpreter.h
- * but BEFORE any engine headers to avoid macro conflicts.
- */
+/*   Kirin is an autonomous chess system that allows you to play against an AI opponent in the real world.
+*    Copyright (C) 2026 Strydr Silverberg
+*    game_controller.h - Integration layer between engine and physical board
+*
+*    This program is free software: you can redistribute it and/or modify
+*    it under the terms of the GNU General Public License as published by
+*    the Free Software Foundation, either version 3 of the License, or
+*    (at your option) any later version.
+*
+*    This program is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*    GNU General Public License for more details.
+*
+*    You should have received a copy of the GNU General Public License
+*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*
+*    This module bridges the chess engine's internal representation with the
+*    physical board interpreter and gantry controller. It handles:
+*    - Converting engine move encoding to physical moves
+*    - Converting engine piece types to physical piece types
+*    - Orchestrating move execution on the physical board                    
+*    - Special move handling (castling, en passant, promotion)
+*     
+*    IMPORTANT: This header is designed to be included AFTER board_interpreter.h
+*    but BEFORE any engine headers to avoid macro conflicts.
+*/
 
 #ifndef KIRIN_GAME_CONTROLLER_H
 #define KIRIN_GAME_CONTROLLER_H

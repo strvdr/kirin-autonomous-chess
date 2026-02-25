@@ -1,11 +1,24 @@
-/*
- * Kirin Chess Engine
- * game_controller.cpp - Integration layer implementation
- * 
- * This file bridges the engine and physical board systems.
- * It includes engine headers directly (after board_interpreter through game_controller.h)
- * and uses the namespaced wrappers for move decoding.
- */
+/*   Kirin is an autonomous chess system that allows you to play against an AI opponent in the real world.
+*    Copyright (C) 2026 Strydr Silverberg
+*    game_controller.cpp - Integration layer implementation
+*
+*    This program is free software: you can redistribute it and/or modify
+*    it under the terms of the GNU General Public License as published by
+*    the Free Software Foundation, either version 3 of the License, or
+*    (at your option) any later version.
+*
+*    This program is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*    GNU General Public License for more details.
+*
+*    You should have received a copy of the GNU General Public License
+*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*
+*    This file bridges the engine and physical board systems.
+*    It includes engine headers directly (after board_interpreter through game_controller.h)
+*    and uses the namespaced wrappers for move decoding.
+*/ 
 
 #include "game_controller.h"
 #include <cstdio>

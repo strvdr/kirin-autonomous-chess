@@ -1,7 +1,20 @@
-/*
- * Kirin Board Interpreter
- * board_interpreter.cpp - Physical board path planning and state management
- */
+/*   Kirin is an autonomous chess system that allows you to play against an AI opponent in the real world.
+*    Copyright (C) 2026 Strydr Silverberg
+*    board_interpreter.cpp - Physical board path planning and state management
+*
+*    This program is free software: you can redistribute it and/or modify
+*    it under the terms of the GNU General Public License as published by
+*    the Free Software Foundation, either version 3 of the License, or
+*    (at your option) any later version.
+*
+*    This program is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*    GNU General Public License for more details.
+*
+*    You should have received a copy of the GNU General Public License
+*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*/ 
 
 #include <cstdio>
 #include <cstdlib>
@@ -690,7 +703,7 @@ MovePlan planMove(PhysicalBoard& board, const PhysicalMove& move) {
 
     restoration.path = findClearPath(tempBoard, restoration.from, restoration.to);
     // Note: if no clear path exists the path will be empty; gantry_controller
-    // will fall back to a direct move (same behaviour as before this change)
+    // will fall back to a direct move 
 
     // Update tempBoard so subsequent restorations see already-returned pieces
     tempBoard.movePiece(restoration.from, restoration.to);

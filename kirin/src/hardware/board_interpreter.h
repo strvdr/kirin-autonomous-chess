@@ -1,18 +1,31 @@
-/*
- * Kirin Board Interpreter
- * board_interpreter.h - Physical board path planning and state management
- * 
- * This module handles the translation between chess moves and physical
- * gantry movements, including:
- * - Temporary board state tracking during piece relocation
- * - Path generation for different piece types
- * - Blocker detection and parking spot selection
- * - A* pathfinding for clear routes
- * 
- * This is a standalone program that communicates with:
- * - The Kirin chess engine (receives moves + occupancy bitboard)
- * - The gantry controller (sends movement commands)
- */
+/*   Kirin is an autonomous chess system that allows you to play against an AI opponent in the real world.
+*    Copyright (C) 2026 Strydr Silverberg
+*    board_interpreter.h - Physical board path planning and state management
+*
+*    This program is free software: you can redistribute it and/or modify
+*    it under the terms of the GNU General Public License as published by
+*    the Free Software Foundation, either version 3 of the License, or
+*    (at your option) any later version.
+*
+*    This program is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*    GNU General Public License for more details.
+*
+*    You should have received a copy of the GNU General Public License
+*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+* 
+*    This module handles the translation between chess moves and physical
+*    gantry movements, including:
+*    - Temporary board state tracking during piece relocation
+*    - Path generation for different piece types
+*    - Blocker detection and parking spot selection
+*    - A* pathfinding for clear routes
+*    
+*    This is a standalone program that communicates with:
+*    - The Kirin chess engine (receives moves + occupancy bitboard)
+*    - The gantry controller (sends movement commands)
+*/
 
 #ifndef KIRIN_BOARD_INTERPRETER_H
 #define KIRIN_BOARD_INTERPRETER_H
@@ -104,7 +117,6 @@ struct Path {
 };
 
 /************ Physical Move Representation ************/
-// A path is an ordered sequence of squares traversed by a piece
 struct PhysicalMove {
   BoardCoord from;
   BoardCoord to;

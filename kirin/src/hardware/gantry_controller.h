@@ -1,5 +1,20 @@
-//Gantry Controller - Physical coordinate translation and G-Code generation
-/*
+/*   Kirin is an autonomous chess system that allows you to play against an AI opponent in the real world.
+*    Copyright (C) 2026 Strydr Silverberg
+*    gantry_controller.h - Physical coordinate translation and G-code generation
+*
+*    This program is free software: you can redistribute it and/or modify
+*    it under the terms of the GNU General Public License as published by
+*    the Free Software Foundation, either version 3 of the License, or
+*    (at your option) any later version.
+*
+*    This program is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*    GNU General Public License for more details.
+*
+*    You should have received a copy of the GNU General Public License
+*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*
 *          22" rail travel
 *|<------------------------------->|
 *|                                 |
@@ -18,8 +33,6 @@
 * X = 1.5" (center)         X = 20.5" (center)
 * Y = 4" to 18"             Y = 4" to 18"
 */
-
-// gantry_controller.h - Physical coordinate translation and G-code generation
 
 #ifndef KIRIN_GANTRY_CONTROLLER_H
 #define KIRIN_GANTRY_CONTROLLER_H
