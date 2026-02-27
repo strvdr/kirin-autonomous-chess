@@ -7,10 +7,10 @@
        )^\))\))  /  *\      KIRIN CHESS ENGINE v0.3.1
         \_|| || / /^`-'     
  __       -\ \\--/ /          Author:      Strydr Silverberg
-<'  \\___/   ___. )'                        Colorado School of Mines, Class of 2026
+<'  \\___/   ___. )'                        Colorado School of Mines, Class of 2027
       `====\ )___/\\            
            //     `"            Hardware:    Colin Dake
-           \\    /  \           
+           \\    /  \                          Colorado School of Mines, Class of 2027
 ```
 
 > **2026 Colorado School of Mines ProtoFund Recipient**  
@@ -20,7 +20,7 @@
 
 ## Overview
 
-Kirin is an autonomous chess system that delivers a complete single-player experience by pairing a custom chess engine with a physically-actuated board. A two-axis gantry equipped with an electromagnet moves pieces across the board independently, eliminating the need for a human opponent while preserving the tactile satisfaction of over-the-board play.
+Kirin is an autonomous chess system that delivers a complete single-player experience by pairing a custom chess engine with a physically-actuated board. A two-axis gantry equipped with an electromagnet moves pieces across the board independently, eliminating the need for a human opponent while preserving the tactile satisfaction of over-the-board play. This README is intended to serve as a general overview, but comprehensive documentation for all software can be found in this repository under /docs.
 
 The system is built around three tightly-coupled layers:
 
