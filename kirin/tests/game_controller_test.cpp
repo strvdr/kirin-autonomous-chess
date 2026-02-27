@@ -1,21 +1,37 @@
-/*
- * Test Suite for Kirin Game Controller
- *
- * Tests the integration layer between the chess engine and physical board,
- * covering all logic that does not require connected gantry hardware:
- *
- *   - Move encoding/decoding (EngineMove namespace)
- *   - Coordinate conversion (squareToBoardCoord / boardCoordToSquare)
- *   - Piece type conversion (engineToPhysicalPiece / physicalToEnginePiece)
- *   - isWhitePiece
- *   - PhysicalBoard state tracking (syncWithEngine, movePiece, clearSquare)
- *   - parseBoardMove (move string → engine move)
- *   - isGameOver  (checkmate / stalemate / mid-game)
- *   - isEngineTurn / startGame / stopGame / isGameInProgress
- *   - executeEngineMove / executeCastling / executeEnPassant / executePromotion
- *     all gate on gantry.isConnected(), so they return false without hardware —
- *     we verify that behaviour explicitly.
- */
+/*   Kirin is an autonomous chess system that allows you to play against an AI opponent in the real world.
+*    Copyright (C) 2026 Strydr Silverberg
+*    game_controller_test.cpp - Generates verifiable g-code to be input to the gantry
+*
+*    This program is free software: you can redistribute it and/or modify
+*    it under the terms of the GNU General Public License as published by
+*    the Free Software Foundation, either version 3 of the License, or
+*    (at your option) any later version.
+*
+*    This program is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*    GNU General Public License for more details.
+*
+*    You should have received a copy of the GNU General Public License
+*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*
+*    Test Suite for Kirin Game Controller
+*   
+*    Tests the integration layer between the chess engine and physical board,
+*    covering all logic that does not require connected gantry hardware:
+*   
+*      - Move encoding/decoding (EngineMove namespace)
+*      - Coordinate conversion (squareToBoardCoord / boardCoordToSquare)
+*      - Piece type conversion (engineToPhysicalPiece / physicalToEnginePiece)
+*      - isWhitePiece
+*      - PhysicalBoard state tracking (syncWithEngine, movePiece, clearSquare)
+*      - parseBoardMove (move string → engine move)
+*      - isGameOver  (checkmate / stalemate / mid-game)
+*      - isEngineTurn / startGame / stopGame / isGameInProgress
+*      - executeEngineMove / executeCastling / executeEnPassant / executePromotion
+*        all gate on gantry.isConnected(), so they return false without hardware —
+*        we verify that behaviour explicitly.
+*/
 
 #include <cstdio>
 #include <cstring>

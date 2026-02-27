@@ -1,29 +1,42 @@
-/*
- * Kirin Chess Engine
- * engine_test.cpp - Engine validity and skill level test suite
- *
- * Tests are organised into four suites:
- *
- *   1. Perft              – move-generation node counts vs published ground truth
- *   2. Evaluation sanity  – sign, symmetry, and material ordering of evaluate()
- *   3. Tactical positions – perft(1)==0 for checkmate/stalemate; forced moves
- *                           verified by counting legal alternatives
- *   4. Skill level        – skillLevel global, depth-cap effect via perft counts,
- *                           and move legality invariant via generateMoves/makeMove
- *
- * WHY NO negamax() CALLS
- * ──────────────────────
- * negamax() calls communicate() every 2048 nodes.  communicate() calls
- * readInput() which calls select() on stdin.  When CTest runs the binary
- * stdin is /dev/null, which select() reports as readable (EOF).  readInput()
- * then sets stopped=1.  Every subsequent negamax() call returns 0 immediately,
- * pvTable is never updated, and the zero move causes a crash.
- *
- * The other test files in this project (captured_piece_test, board_interpreter_test,
- * game_controller_test) avoid this by never calling any search function.  This
- * suite follows the same pattern: all tests use only parseFEN, generateMoves,
- * makeMove, evaluate, and perft — none of which touch stdin.
- */
+/*   Kirin is an autonomous chess system that allows you to play against an AI opponent in the real world.
+*    Copyright (C) 2026 Strydr Silverberg
+*    engine_test.cpp - Engine validity and skill level test suite
+*
+*    This program is free software: you can redistribute it and/or modify
+*    it under the terms of the GNU General Public License as published by
+*    the Free Software Foundation, either version 3 of the License, or
+*    (at your option) any later version.
+*
+*    This program is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*    GNU General Public License for more details.
+*
+*    You should have received a copy of the GNU General Public License
+*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*    
+*    Tests are organised into four suites:
+*    
+*      1. Perft              – move-generation node counts vs published ground truth
+*      2. Evaluation sanity  – sign, symmetry, and material ordering of evaluate()
+*      3. Tactical positions – perft(1)==0 for checkmate/stalemate; forced moves
+*                              verified by counting legal alternatives
+*      4. Skill level        – skillLevel global, depth-cap effect via perft counts,
+*                              and move legality invariant via generateMoves/makeMove
+*    
+*    WHY NO negamax() CALLS
+*    ──────────────────────
+*    negamax() calls communicate() every 2048 nodes.  communicate() calls
+*    readInput() which calls select() on stdin.  When CTest runs the binary
+*    stdin is /dev/null, which select() reports as readable (EOF).  readInput()
+*    then sets stopped=1.  Every subsequent negamax() call returns 0 immediately,
+*    pvTable is never updated, and the zero move causes a crash.
+*    
+*    The other test files in this project (captured_piece_test, board_interpreter_test,
+*    game_controller_test) avoid this by never calling any search function.  This
+*    suite follows the same pattern: all tests use only parseFEN, generateMoves,
+*    makeMove, evaluate, and perft — none of which touch stdin.
+*/
 
 #include <cstdio>
 #include <cstring>

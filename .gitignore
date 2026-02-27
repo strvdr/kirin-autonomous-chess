@@ -47,6 +47,7 @@
 *.log
 *.out
 *.synctex.gz
+*.toc
 
 # Build directory
 build/

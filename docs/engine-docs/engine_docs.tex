@@ -117,7 +117,7 @@
     {\Huge\bfseries First Move Robotics}\\[0.3cm]
     {\Large Software Documentation}\\[0.3cm]
     \rule{\textwidth}{1pt}\\[1cm]
-    {\large Version 0.2.0 (Development Build)}
+    {\large Version 0.3.1 (Development Build)}
 }
 \author{Strydr Silverberg\\strydr\_silverberg@mines.edu\\\\Colorado School of Mines, Class of 2026}
 \date{\today}
@@ -672,6 +672,97 @@ bestmove e2e4
 \end{lstlisting}
 
 %==============================================================================
+\section{Skill Level}
+%==============================================================================
+
+Kirin exposes a three-tier difficulty setting that adjusts both search depth and
+move quality, making the engine accessible to players of all levels while
+preserving full strength for competitive play.
+
+\subsection{Difficulty Tiers}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{clll}
+\toprule
+\textbf{Level} & \textbf{Name}   & \textbf{Max Search Depth} & \textbf{Move Noise} \\
+\midrule
+0              & Easy            & 3 plies                   & $\pm$150 centipawns \\
+1              & Medium          & 5 plies                   & $\pm$50 centipawns  \\
+2              & Hard (default)  & Caller-supplied depth      & None                \\
+\bottomrule
+\end{tabular}
+\caption{Skill level configuration}
+\end{table}
+
+Two independent mechanisms are combined to simulate human-like play at lower
+difficulty settings:
+
+\begin{enumerate}
+    \item \textbf{Depth capping.} Inside \texttt{searchPosition}, the
+    caller-supplied depth is silently clamped to a tier-specific ceiling before
+    iterative deepening begins. At skill~0 the engine never searches deeper than
+    3 plies; at skill~1 the cap is 5 plies; at skill~2 the cap is set to 64
+    (effectively unlimited for practical time controls).
+
+    \item \textbf{Root-move noise.} After the search completes, the engine's
+    best move is not always played. At skill levels below 2, each legal root
+    move is assigned the engine's score perturbed by a random offset drawn
+    uniformly from $[-\textit{range},\, +\textit{range}]$, where
+    \textit{range} is 150\,cp at skill~0 and 50\,cp at skill~1. The move with
+    the highest \emph{noisy} score is selected. This causes the engine to
+    occasionally prefer a suboptimal move in a way that resembles human error
+    rather than purely random play.
+\end{enumerate}
+
+\subsection{UCI Configuration}
+
+The skill level is exposed as a standard UCI spin option and can be set from
+any compatible GUI or from the command line:
+
+\begin{lstlisting}[language=bash]
+setoption name Skill Level value 0   % Easy
+setoption name Skill Level value 1   % Medium
+setoption name Skill Level value 2   % Hard (default)
+\end{lstlisting}
+
+The engine announces the option during UCI initialisation:
+
+\begin{lstlisting}
+option name Skill Level type spin default 2 min 0 max 2
+\end{lstlisting}
+
+Values outside the range [0,\,2] are clamped silently. The engine acknowledges
+each change with an info string:
+
+\begin{lstlisting}
+info string Skill Level set to 1
+\end{lstlisting}
+
+\subsection{Implementation}
+
+The global variable \texttt{skillLevel} in \texttt{search.cpp} stores the
+current setting. It is read in two places:
+
+\begin{lstlisting}[language=C++]
+// Depth cap applied at the start of searchPosition()
+static const int skillDepthCap[3] = { 3, 5, 64 };
+int depthCap = skillDepthCap[skillLevel];
+if (depth > depthCap) depth = depthCap;
+
+// Noise injection applied after the best move is found
+if (skillLevel < 2) {
+    static const int noiseRange[2] = { 150, 50 };
+    int range = noiseRange[skillLevel];
+    // ... re-score root moves with random perturbation
+}
+\end{lstlisting}
+
+\notebox{Skill level does not affect the correctness of move generation or
+position evaluation — illegal moves are never produced regardless of the
+difficulty setting. The engine test suite (\texttt{engine\_test.cpp}) verifies
+this invariant across all three levels and multiple board positions.}
+%==============================================================================
 \chapter{API Reference}
 %==============================================================================
 
@@ -838,6 +929,8 @@ Repetition table & 8 KB \\
     \item[Quiescence Search] Extended search of capture sequences to avoid horizon effects.
     \item[UCI] Universal Chess Interface; standard protocol for chess engine communication.
     \item[Zobrist Hashing] A technique for hashing chess positions using XOR of random numbers.
+    \item[Skill Level] A configurable difficulty setting (0--2) that limits search depth and injects random noise into move selection to simulate human-like play.
+    \item[Move Noise] A random centipawn perturbation applied to root-move scores at lower skill levels, causing the engine to occasionally prefer a suboptimal move.
 \end{description}
 
 %==============================================================================

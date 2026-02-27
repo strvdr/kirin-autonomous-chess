@@ -1,36 +1,51 @@
-/*
- *       ,  ,
- *           \\ \\                 
- *           ) \\ \\    _p_        
- *            )^\))\))  /  *\      KIRIN CHESS ENGINE v0.3
- *             \_|| || / /^`-'     
- *    __       -\ \\--/ /          Author:      Strydr Silverberg
- *  <'  \\___/   ___. )'                        Colorado School of Mines, Class of 2026
- *       `====\ )___/\\            
- *            //     `"            Hardware:    Colin Dake
- *            \\    /  \           
- *            `"                   
- * ══════════════════════════════════════════════════════════════════════════════
- * PROJECT OVERVIEW
- * ══════════════════════════════════════════════════════════════════════════════
- * 
- * Kirin is the computational engine powering an autonomous chess system
- * designed to deliver a complete single-player experience. By integrating
- * intelligent move generation with a physical board capable of independent
- * piece manipulation, the system eliminates the need for a human opponent
- * while preserving the tactile satisfaction of over-the-board play.
- * 
- * ══════════════════════════════════════════════════════════════════════════════
- * FUNDING & ACKNOWLEDGMENTS
- * ══════════════════════════════════════════════════════════════════════════════
- * 
- * 2026 Colorado School of Mines ProtoFund Recipient
- * Team: Strydr Silverberg, Colin Dake
- * 
- * This prototype represents the practical application of engineering
- * principles and computer science fundamentals developed through our
- * coursework at the Colorado School of Mines.
- */
+/*   Kirin is an autonomous chess system that allows you to play against an AI opponent in the real world.
+*    Copyright (C) 2026 Strydr Silverberg
+*    attacks.cpp - Attack tables and magic bitboard lookups
+*
+*    This program is free software: you can redistribute it and/or modify
+*    it under the terms of the GNU General Public License as published by
+*    the Free Software Foundation, either version 3 of the License, or
+*    (at your option) any later version.
+*
+*    This program is distributed in the hope that it will be useful,
+*    but WITHOUT ANY WARRANTY; without even the implied warranty of
+*    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*    GNU General Public License for more details.
+*
+*    You should have received a copy of the GNU General Public License
+*    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+*          ,  ,
+*              \\ \\                 
+*              ) \\ \\    _p_        
+*               )^\))\))  /  *\      KIRIN CHESS ENGINE v0.3
+*                \_|| || / /^`-'     
+*       __       -\ \\--/ /          Author:      Strydr Silverberg
+*     <'  \\___/   ___. )'                        Colorado School of Mines, Class of 2026
+*          `====\ )___/\\            
+*               //     `"            Hardware:    Colin Dake
+*               \\    /  \           
+*               `"                   
+*    ══════════════════════════════════════════════════════════════════════════════
+*    PROJECT OVERVIEW
+*    ══════════════════════════════════════════════════════════════════════════════
+*    
+*    Kirin is the computational engine powering an autonomous chess system
+*    designed to deliver a complete single-player experience. By integrating
+*    intelligent move generation with a physical board capable of independent
+*    piece manipulation, the system eliminates the need for a human opponent
+*    while preserving the tactile satisfaction of over-the-board play.
+*    
+*    ══════════════════════════════════════════════════════════════════════════════
+*    FUNDING & ACKNOWLEDGMENTS
+*    ══════════════════════════════════════════════════════════════════════════════
+*    
+*    2026 Colorado School of Mines ProtoFund Recipient
+*    Team: Strydr Silverberg, Colin Dake
+*    
+*    This prototype represents the practical application of engineering
+*    principles and computer science fundamentals developed through our
+*    coursework at the Colorado School of Mines.
+*/
 
 #include <cstdio>
 #include <cstring>
