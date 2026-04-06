@@ -68,3 +68,5 @@ Makefile
 .idea/
 *.swp
 *.swo
+
+left_to_do.md

@@ -70,6 +70,7 @@ void printHelp();
 void runPhysicalMode(const char* port);
 void runSimulationMode();
 void runDryRunMode(int maxMoves, int searchDepth);
+static void runSensorGameLoop(GameController& controller, bool engineWhite);
 
 
 
@@ -113,6 +114,152 @@ void printHelp() {
     printf("\n");
 }
 
+/************ Sensor-Based Game Loop ************/
+// This is the core play experience: the human makes moves by physically
+// moving pieces on the board, detected via hall effect sensors. The engine
+// responds by moving pieces via the gantry.
+static void runSensorGameLoop(GameController& controller, bool engineWhite) {
+    printf("\n");
+    printf("══════════════════════════════════════════════════════════════\n");
+    printf("  GAME IN PROGRESS — %s vs %s\n",
+           engineWhite ? "Engine (white)" : "You (white)",
+           engineWhite ? "You (black)" : "Engine (black)");
+    printf("  Make your moves on the physical board.\n");
+    printf("  The system will detect your move automatically.\n");
+    printf("  Press Ctrl+C to abort.\n");
+    printf("══════════════════════════════════════════════════════════════\n");
+    printf("\n");
+
+    int moveNumber = 1;
+
+    while (controller.isGameInProgress()) {
+        // Check for game over
+        if (controller.isGameOver()) {
+            printf("\n");
+            printf("══════════════════════════════════════════════════════════════\n");
+            bool inCheck = isAttacked(
+                getLSBindex(bitboards[side == white ? K : k]),
+                side == white ? black : white
+            );
+            if (inCheck) {
+                printf("  CHECKMATE — %s wins!\n", side == white ? "Black" : "White");
+            } else {
+                printf("  STALEMATE — Draw!\n");
+            }
+            printf("══════════════════════════════════════════════════════════════\n");
+            controller.stopGame();
+            break;
+        }
+
+        if (controller.isEngineTurn()) {
+            // Engine's turn — search and execute
+            printf("\nMove %d%s — Engine thinking...\n",
+                   moveNumber, (side == white) ? "." : "...");
+
+            searchPosition(6);
+
+            extern int bestMove;
+            if (!bestMove) {
+                printf("No legal moves — game over!\n");
+                controller.stopGame();
+                break;
+            }
+
+            // Print what the engine chose
+            int source = getSource(bestMove);
+            int target = getTarget(bestMove);
+            printf("Engine plays: %c%d%c%d",
+                   'a' + (source % 8), 8 - (source / 8),
+                   'a' + (target % 8), 8 - (target / 8));
+            if (getPromoted(bestMove)) {
+                int promo = getPromoted(bestMove) % 6;
+                const char promoChars[] = "pnbrqk";
+                printf("%c", promoChars[promo]);
+            }
+            printf("\n");
+
+            // Execute on physical board (gantry moves the piece)
+            if (!controller.executeEngineMove(bestMove)) {
+                printf("HARDWARE ERROR executing engine move! Aborting game.\n");
+                controller.stopGame();
+                break;
+            }
+
+            // Advance the engine state
+            makeMove(bestMove, allMoves);
+
+            // Sync controller after engine state change
+            controller.syncWithEngine();
+
+            // Verify the physical board matches what the engine expects.
+            // This catches dropped pieces, missed gantry steps, etc.
+            if (!controller.verifyBoardState()) {
+                printf("Board state mismatch after engine move.\n");
+                printf("Please fix the board and type 'continue' or 'abort'.\n");
+                char response[64];
+                while (true) {
+                    printf("kirin> ");
+                    fflush(stdout);
+                    if (fgets(response, sizeof(response), stdin) == nullptr) {
+                        controller.stopGame();
+                        break;
+                    }
+                    response[strcspn(response, "\n")] = 0;
+                    if (strcmp(response, "continue") == 0) {
+                        // Re-sync baselines to the current physical state
+                        // (player has manually fixed the board)
+                        controller.syncWithEngine();
+                        break;
+                    } else if (strcmp(response, "abort") == 0) {
+                        controller.stopGame();
+                        break;
+                    } else {
+                        printf("Type 'continue' (after fixing the board) or 'abort'.\n");
+                    }
+                }
+                if (!controller.isGameInProgress()) break;
+            }
+
+            printBoard();
+
+            // Advance move number after black plays
+            if (side == white) {  // side already flipped by makeMove, so this was black's move
+                moveNumber++;
+            }
+        } else {
+            // Human's turn — wait for sensor input
+            printf("\nMove %d%s — Your turn. Make your move on the board.\n",
+                   moveNumber, (side == white) ? "." : "...");
+
+            int humanMove = 0;
+            if (!controller.waitForHumanMove(humanMove)) {
+                printf("Move detection failed or timed out.\n");
+                continue;
+            }
+
+            // Make the move in the engine
+            if (!makeMove(humanMove, allMoves)) {
+                // This shouldn't happen since waitForHumanMove validated it,
+                // but handle it defensively
+                printf("Engine rejected the detected move — this is a bug.\n");
+                continue;
+            }
+
+            // Sync controller after engine state change
+            controller.syncWithEngine();
+
+            printBoard();
+
+            // Advance move number after black plays
+            if (side == white) {
+                moveNumber++;
+            }
+        }
+    }
+
+    printf("\nGame ended.\n");
+}
+
 /************ Physical Board Game Loop ************/
 void runPhysicalMode(const char* port) {
     printf("\n");
@@ -129,6 +276,14 @@ void runPhysicalMode(const char* port) {
     if (!controller.connectHardware(port)) {
         printf("Failed to connect. Check port and try again.\n");
         return;
+    }
+    
+    // Initialize the board scanner
+    printf("Initializing board scanner...\n");
+    if (!controller.initScanner()) {
+        printf("Warning: Scanner initialization failed.\n");
+        printf("  Sensor-based move detection will not be available.\n");
+        printf("  You can still use 'move' to type moves manually.\n");
     }
     
     // Home the gantry
@@ -160,20 +315,65 @@ void runPhysicalMode(const char* port) {
         }
         else if (strcmp(input, "help") == 0) {
             printf("\nCommands:\n");
-            printf("  newgame [white|black]  - Start new game (engine plays specified color)\n");
-            printf("  move <move>            - Make a move (e.g., 'move e2e4')\n");
+            printf("  play [white|black]     - Start a game using board sensors\n");
+            printf("                           (engine plays specified color, default white)\n");
+            printf("  newgame [white|black]  - Start new game with manual move entry\n");
+            printf("  move <move>            - Make a move manually (e.g., 'move e2e4')\n");
             printf("  go                     - Engine makes a move\n");
             printf("  board                  - Display current position\n");
             printf("  physical               - Display physical board state\n");
+            printf("  scan                   - Scan and display sensor readings\n");
+            printf("  diag                   - Run full sensor diagnostic\n");
             printf("  fen <fen>              - Set position from FEN string\n");
             printf("  home                   - Home the gantry\n");
             printf("  test                   - Run hardware test sequence\n");
             printf("  quit                   - Exit program\n");
             printf("\n");
         }
+        else if (strncmp(input, "play", 4) == 0) {
+            // Sensor-based game — the main experience
+            if (!controller.isScannerReady()) {
+                printf("Error: Board scanner not initialized.\n");
+                printf("  Sensor-based play requires working hall effect sensors.\n");
+                printf("  Use 'newgame' for manual move entry instead.\n");
+                continue;
+            }
+            
+            bool engineWhite = true;
+            if (strstr(input, "black")) {
+                engineWhite = false;
+            }
+            
+            printf("Setting up new game (engine plays %s)...\n",
+                   engineWhite ? "white" : "black");
+            
+            // Reset engine
+            parseFEN(startPosition);
+            
+            // Set up physical board
+            if (!controller.setupNewGame()) {
+                printf("Failed to set up board.\n");
+                continue;
+            }
+            
+            controller.startGame(engineWhite);
+            
+            // Verify the physical board matches the starting position
+            if (!controller.verifyBoardState()) {
+                printf("Board does not match starting position after setup.\n");
+                printf("Please fix piece placement and try 'play' again.\n");
+                controller.stopGame();
+                continue;
+            }
+            
+            printBoard();
+            
+            // Run the sensor-based game loop
+            runSensorGameLoop(controller, engineWhite);
+        }
         else if (strncmp(input, "newgame", 7) == 0) {
-            // Parse color argument
-            bool engineWhite = true;  // Default
+            // Manual-entry game (legacy / fallback)
+            bool engineWhite = true;
             if (strstr(input, "black")) {
                 engineWhite = false;
             }
@@ -192,9 +392,15 @@ void runPhysicalMode(const char* port) {
             
             controller.startGame(engineWhite);
             
+            // Verify setup if scanner is available
+            if (controller.isScannerReady() && !controller.verifyBoardState()) {
+                printf("Warning: Board does not match starting position.\n");
+            }
+            
             printBoard();
             printf("\nGame started. %s to move.\n", 
                    engineWhite ? "Engine (white)" : "You (white)");
+            printf("Use 'move <uci>' to enter moves manually.\n");
             
             // If engine plays white, make first move
             if (engineWhite) {
@@ -204,13 +410,13 @@ void runPhysicalMode(const char* port) {
                 // Get best move from search
                 extern int bestMove;
                 if (bestMove) {
-                    // Make the move in the engine
-                    makeMove(bestMove, allMoves);
-                    
-                    // Execute on physical board
+                    // Execute on physical board FIRST
                     if (controller.executeEngineMove(bestMove)) {
+                        // Hardware succeeded — advance engine state
+                        makeMove(bestMove, allMoves);
+                        controller.syncWithEngine();
+                        
                         printf("Engine plays: ");
-                        // Print move (simplified)
                         int source = getSource(bestMove);
                         int target = getTarget(bestMove);
                         printf("%c%d%c%d\n", 
@@ -236,17 +442,19 @@ void runPhysicalMode(const char* port) {
                 continue;
             }
             
-            // Make the move in the engine
+            // Execute on physical board FIRST (before advancing engine state)
+            if (!controller.executeEngineMove(move)) {
+                printf("Hardware error executing move! Board state unchanged.\n");
+                continue;
+            }
+            
+            // Hardware succeeded — now advance the engine state
             if (!makeMove(move, allMoves)) {
                 printf("Illegal move: %s\n", moveStr);
                 continue;
             }
             
-            // Execute on physical board
-            if (!controller.executeEngineMove(move)) {
-                printf("Hardware error! Move made in engine but failed on board.\n");
-                continue;
-            }
+            controller.syncWithEngine();
             
             printf("Move: %s\n", moveStr);
             printBoard();
@@ -263,9 +471,12 @@ void runPhysicalMode(const char* port) {
             
             extern int bestMove;
             if (bestMove) {
-                makeMove(bestMove, allMoves);
-                
+                // Execute on hardware FIRST
                 if (controller.executeEngineMove(bestMove)) {
+                    // Hardware succeeded — advance engine state
+                    makeMove(bestMove, allMoves);
+                    controller.syncWithEngine();
+                    
                     printf("Engine plays: ");
                     int source = getSource(bestMove);
                     int target = getTarget(bestMove);
@@ -296,9 +507,12 @@ void runPhysicalMode(const char* port) {
             
             extern int bestMove;
             if (bestMove) {
-                makeMove(bestMove, allMoves);
-                
+                // Execute on hardware FIRST
                 if (controller.executeEngineMove(bestMove)) {
+                    // Hardware succeeded — advance engine state
+                    makeMove(bestMove, allMoves);
+                    controller.syncWithEngine();
+                    
                     printf("Engine plays: ");
                     int source = getSource(bestMove);
                     int target = getTarget(bestMove);
@@ -307,7 +521,7 @@ void runPhysicalMode(const char* port) {
                            'a' + (target % 8), 8 - (target / 8));
                     printBoard();
                 } else {
-                    printf("Hardware error!\n");
+                    printf("Hardware error! Engine state unchanged.\n");
                 }
             } else {
                 printf("No legal moves!\n");
@@ -318,6 +532,27 @@ void runPhysicalMode(const char* port) {
         }
         else if (strcmp(input, "physical") == 0) {
             printPhysicalBoard(controller.getPhysicalBoard());
+        }
+        else if (strcmp(input, "scan") == 0) {
+            if (!controller.isScannerReady()) {
+                printf("Scanner not initialized.\n");
+                continue;
+            }
+            BoardScanner& scanner = controller.getScanner();
+            Bitboard boardScan = scanner.scanBoardDebounced();
+            scanner.printScan(boardScan);
+            
+            uint16_t blackStorage = scanner.scanStorageDebounced(false);
+            uint16_t whiteStorage = scanner.scanStorageDebounced(true);
+            scanner.printStorageScan(blackStorage, false);
+            scanner.printStorageScan(whiteStorage, true);
+        }
+        else if (strcmp(input, "diag") == 0) {
+            if (!controller.isScannerReady()) {
+                printf("Scanner not initialized.\n");
+                continue;
+            }
+            controller.getScanner().diagnosticScan();
         }
         else if (strncmp(input, "fen ", 4) == 0) {
             const char* fen = input + 4;

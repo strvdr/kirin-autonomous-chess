@@ -94,12 +94,14 @@ set(ENGINE_HEADERS
 # ============================================
 set(HARDWARE_SOURCES
     src/hardware/board_interpreter.cpp
+    src/hardware/board_scanner.cpp
     src/hardware/gantry_controller.cpp
     src/hardware/game_controller.cpp
 )
 
 set(HARDWARE_HEADERS
     src/hardware/board_interpreter.h
+    src/hardware/board_scanner.h
     src/hardware/gantry_controller.h
     src/hardware/game_controller.h
 )
@@ -119,6 +121,17 @@ target_include_directories(kirin_hardware PUBLIC
     ${CMAKE_SOURCE_DIR}/src/engine
 )
 target_link_libraries(kirin_hardware PUBLIC kirin_engine)
+
+# Link libgpiod when GPIO support is enabled
+if(CMAKE_CXX_FLAGS MATCHES "HAS_GPIOD" OR DEFINED HAS_GPIOD)
+    find_library(GPIOD_LIB gpiod)
+    if(GPIOD_LIB)
+        target_link_libraries(kirin_hardware PUBLIC ${GPIOD_LIB})
+        message(STATUS "libgpiod found: ${GPIOD_LIB}")
+    else()
+        message(WARNING "HAS_GPIOD defined but libgpiod not found — GPIO calls will fail at link time")
+    endif()
+endif()
 
 # ============================================
 # Main Executable
@@ -164,6 +177,15 @@ target_include_directories(engine_test PRIVATE
 target_link_libraries(engine_test PRIVATE kirin_engine)
 add_test(NAME EngineTest COMMAND engine_test)
 
+# Board scanner test (sensor move detection logic - no hardware required)
+add_executable(board_scanner_test tests/board_scanner_test.cpp)
+target_include_directories(board_scanner_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/engine
+    ${CMAKE_SOURCE_DIR}/src/hardware
+)
+target_link_libraries(board_scanner_test PRIVATE kirin_hardware kirin_engine)
+add_test(NAME BoardScannerTest COMMAND board_scanner_test)
+
 # ============================================
 # Test Report (Markdown for GitHub)
 # ============================================
@@ -179,6 +201,7 @@ add_custom_target(test_report
         board_interpreter_test
         game_controller_test
         engine_test
+        board_scanner_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running all tests and writing tests/TEST_RESULTS.md"
 )

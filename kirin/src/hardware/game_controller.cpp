@@ -102,6 +102,19 @@ GameController::~GameController() {
     }
 }
 
+/*** Illegal State Callback ***/
+
+void GameController::onIllegalState() {
+    printf("\n");
+    printf("  *** BOARD STATE NOT RECOGNIZED ***\n");
+    printf("  The current board position does not match any legal move.\n");
+    printf("  Please check that all pieces are placed correctly.\n");
+    printf("  (The system will continue waiting for a valid move.)\n");
+    printf("\n");
+    // TODO: In the future, this could trigger a buzzer, LED, or
+    // other physical feedback on the board to alert the player.
+}
+
 /*** Setup ***/
 
 bool GameController::connectHardware(const char* port) {
@@ -110,6 +123,15 @@ bool GameController::connectHardware(const char* port) {
         return false;
     }
     printf("Connected to gantry on %s\n", port);
+    return true;
+}
+
+bool GameController::initScanner() {
+    if (!scanner.init()) {
+        printf("Error: Failed to initialize board scanner\n");
+        return false;
+    }
+    printf("Board scanner initialized\n");
     return true;
 }
 
@@ -145,6 +167,9 @@ bool GameController::setupNewGame() {
     // Sync physical board with engine's starting position
     syncWithEngine();
     
+    // Sync the scanner's baseline state as well
+    scanner.setLastScan(occupancy[both]);
+    
     printf("New game ready\n");
     return true;
 }
@@ -153,6 +178,17 @@ void GameController::syncWithEngine() {
     // Set the physical board occupancy from the engine's state
     // occupancy[both] contains all pieces
     physicalBoard.setOccupancy(occupancy[both]);
+    
+    // Sync the scanner's board baseline
+    scanner.setLastScan(occupancy[both]);
+    
+    // If scanner is initialized, also snapshot the storage zones
+    // so we have a fresh baseline for capture detection
+    if (scanner.isInitialized()) {
+        uint16_t blackSt = scanner.scanStorageDebounced(false);
+        uint16_t whiteSt = scanner.scanStorageDebounced(true);
+        scanner.setLastStorage(blackSt, whiteSt);
+    }
 }
 
 /*** Game Flow ***/
@@ -211,6 +247,9 @@ bool GameController::executeNormalMove(int engineMove) {
     }
     physicalBoard.movePiece(physMove.from, physMove.to);
     
+    // Update scanner baseline to match new board state
+    scanner.setLastScan(physicalBoard.getOccupancy());
+    
     return true;
 }
 
@@ -226,6 +265,80 @@ bool GameController::executeHumanMove(const char* moveStr) {
     return executeEngineMove(move);
 }
 
+bool GameController::waitForHumanMove(int& engineMove, int timeoutMs) {
+    if (!scanner.isInitialized()) {
+        printf("Error: Board scanner not initialized\n");
+        return false;
+    }
+    
+    // The scanner needs the current board occupancy and storage baselines.
+    Bitboard currentOccupancy = occupancy[both];
+    
+    // Read the current storage zone state as our baseline.
+    // Any new piece appearing in storage during the human's move = a capture.
+    uint16_t blackStorage = scanner.scanStorageDebounced(false);
+    uint16_t whiteStorage = scanner.scanStorageDebounced(true);
+    
+    printf("Waiting for your move...\n");
+    
+    ScannerMoveResult result = scanner.waitForLegalMove(
+        currentOccupancy,
+        blackStorage,
+        whiteStorage,
+        timeoutMs,
+        &GameController::onIllegalState
+    );
+    
+    if (result.success) {
+        engineMove = result.engineMove;
+        
+        printf("Detected move: %s\n", result.uciString);
+        
+        // Update the physical board state to reflect the human's move.
+        // The engine state will be updated by the caller via makeMove().
+        PhysicalMove physMove = engineToPhysicalMove(engineMove);
+        
+        if (EngineMove::getCapture(engineMove)) {
+            if (EngineMove::getEnpassant(engineMove)) {
+                // En passant: clear the captured pawn's actual square
+                BoardCoord fromCoord = squareToBoardCoord(EngineMove::getSource(engineMove));
+                BoardCoord toCoord = squareToBoardCoord(EngineMove::getTarget(engineMove));
+                BoardCoord capturedSquare(fromCoord.row, toCoord.col);
+                physicalBoard.clearSquare(capturedSquare);
+            } else {
+                physicalBoard.clearSquare(physMove.to);
+            }
+        }
+        
+        if (EngineMove::getCastle(engineMove)) {
+            // Castling: also move the rook in our physical board tracking
+            int target = EngineMove::getTarget(engineMove);
+            if (target == g1) {
+                physicalBoard.movePiece(squareToBoardCoord(h1), squareToBoardCoord(f1));
+            } else if (target == c1) {
+                physicalBoard.movePiece(squareToBoardCoord(a1), squareToBoardCoord(d1));
+            } else if (target == g8) {
+                physicalBoard.movePiece(squareToBoardCoord(h8), squareToBoardCoord(f8));
+            } else if (target == c8) {
+                physicalBoard.movePiece(squareToBoardCoord(a8), squareToBoardCoord(d8));
+            }
+        }
+        
+        physicalBoard.movePiece(physMove.from, physMove.to);
+        
+        // Update scanner baseline
+        scanner.setLastScan(physicalBoard.getOccupancy());
+        
+        return true;
+    }
+    
+    if (result.timeout) {
+        printf("Move detection timed out.\n");
+    }
+    
+    return false;
+}
+
 /*** Special Moves ***/
 
 bool GameController::executeCastling(int engineMove) {
@@ -234,10 +347,14 @@ bool GameController::executeCastling(int engineMove) {
 
 bool GameController::executeCastlingInternal(int engineMove) {
     
-    
     int source = EngineMove::getSource(engineMove);
     int target = EngineMove::getTarget(engineMove);
     int piece = EngineMove::getPiece(engineMove);
+    
+    // Save physical board state before multi-step move.
+    // If any step fails, we restore to this snapshot so the
+    // physicalBoard tracking doesn't end up half-updated.
+    Bitboard savedOccupancy = physicalBoard.getOccupancy();
     
     // Determine if it's white or black castling
     bool isWhite = isWhitePiece(piece);
@@ -285,7 +402,7 @@ bool GameController::executeCastlingInternal(int engineMove) {
         return false;
     }
     
-    // Update physical board for rook
+    // Update physical board for rook (needed for king path planning)
     physicalBoard.movePiece(rookMove.from, rookMove.to);
     
     // Step 2: Move the king
@@ -300,16 +417,25 @@ bool GameController::executeCastlingInternal(int engineMove) {
     if (!kingPlan.isValid) {
         printf("Error planning king move for castling: %s\n",
                kingPlan.errorMessage ? kingPlan.errorMessage : "unknown error");
+        // Rook already moved physically but king planning failed.
+        // Restore physicalBoard to pre-castling state.
+        physicalBoard.setOccupancy(savedOccupancy);
         return false;
     }
     
     if (!gantry.executeMove(kingPlan, false, UNKNOWN)) {
         printf("Error: King move failed during castling\n");
+        // Rook moved physically but king failed on hardware.
+        // Restore physicalBoard to pre-castling state.
+        physicalBoard.setOccupancy(savedOccupancy);
         return false;
     }
     
     // Update physical board for king
     physicalBoard.movePiece(kingMove.from, kingMove.to);
+    
+    // Update scanner baseline
+    scanner.setLastScan(physicalBoard.getOccupancy());
     
     return true;
 }
@@ -322,6 +448,9 @@ bool GameController::executeEnPassantInternal(int engineMove) {
     int source = EngineMove::getSource(engineMove);
     int target = EngineMove::getTarget(engineMove);
     int piece = EngineMove::getPiece(engineMove);
+    
+    // Save physical board state before multi-step move.
+    Bitboard savedOccupancy = physicalBoard.getOccupancy();
     
     // The captured pawn is on the same file as destination,
     // but same rank as the capturing pawn's origin
@@ -364,16 +493,25 @@ bool GameController::executeEnPassantInternal(int engineMove) {
     if (!pawnPlan.isValid) {
         printf("Error planning en passant pawn move: %s\n",
                pawnPlan.errorMessage ? pawnPlan.errorMessage : "unknown error");
+        // Captured pawn already removed physically, but pawn move planning failed.
+        // Restore physicalBoard to pre-move state.
+        physicalBoard.setOccupancy(savedOccupancy);
         return false;
     }
     
     if (!gantry.executeMove(pawnPlan, false, UNKNOWN)) {
         printf("Error: Pawn move failed during en passant\n");
+        // Captured pawn removed but capturing pawn didn't move.
+        // Restore physicalBoard to pre-move state.
+        physicalBoard.setOccupancy(savedOccupancy);
         return false;
     }
     
     // Update physical board - move pawn
     physicalBoard.movePiece(pawnMove.from, pawnMove.to);
+    
+    // Update scanner baseline
+    scanner.setLastScan(physicalBoard.getOccupancy());
     
     return true;
 }
@@ -388,6 +526,9 @@ bool GameController::executePromotionInternal(int engineMove) {
     
     // Check if it's also a capture
     if (EngineMove::getCapture(engineMove)) {
+        // Save physical board state before multi-step move.
+        Bitboard savedOccupancy = physicalBoard.getOccupancy();
+        
         // Handle as a capture, but we need to use the pawn's path generation
         int source = EngineMove::getSource(engineMove);
         int target = EngineMove::getTarget(engineMove);
@@ -420,11 +561,17 @@ bool GameController::executePromotionInternal(int engineMove) {
         if (!plan.isValid) {
             printf("Error planning promotion move: %s\n",
                    plan.errorMessage ? plan.errorMessage : "unknown error");
+            // Captured piece removed but pawn move planning failed.
+            // Restore physicalBoard to pre-move state.
+            physicalBoard.setOccupancy(savedOccupancy);
             return false;
         }
         
         if (!gantry.executeMove(plan, false, UNKNOWN)) {
             printf("Error: Pawn move failed during promotion\n");
+            // Captured piece removed but pawn didn't move.
+            // Restore physicalBoard to pre-move state.
+            physicalBoard.setOccupancy(savedOccupancy);
             return false;
         }
         
@@ -434,7 +581,110 @@ bool GameController::executePromotionInternal(int engineMove) {
         return executeNormalMove(engineMove);
     }
     
+    // Update scanner baseline
+    scanner.setLastScan(physicalBoard.getOccupancy());
+    
     return true;
+}
+
+/*** Board Verification ***/
+
+bool GameController::verifyBoardState(Bitboard& expectedOcc, Bitboard& actualOcc) {
+    if (!scanner.isInitialized()) {
+        // No scanner — can't verify, assume OK
+        return true;
+    }
+
+    expectedOcc = occupancy[both];
+    actualOcc = scanner.scanBoardDebounced();
+
+    return (expectedOcc == actualOcc);
+}
+
+bool GameController::verifyBoardState() {
+    Bitboard expected = 0, actual = 0;
+
+    if (verifyBoardState(expected, actual)) {
+        return true;
+    }
+
+    printf("\n");
+    printf("  *** BOARD MISMATCH DETECTED ***\n");
+    printf("  The physical board does not match the expected position.\n");
+    printf("  A piece may have been dropped or displaced.\n");
+    printf("\n");
+
+    printBoardMismatch(expected, actual);
+    return false;
+}
+
+void GameController::printBoardMismatch(Bitboard expected, Bitboard actual) {
+    Bitboard diff = expected ^ actual;
+
+    // Squares that should have a piece but don't
+    Bitboard missing = expected & diff;
+    // Squares that have a piece but shouldn't
+    Bitboard extra = actual & diff;
+
+    int missingCount = countBits(missing);
+    int extraCount = countBits(extra);
+
+    printf("  Expected vs Actual:\n");
+    printf("    a b c d e f g h        a b c d e f g h\n");
+
+    for (int row = 0; row < 8; row++) {
+        // Expected
+        printf("  %d ", 8 - row);
+        for (int col = 0; col < 8; col++) {
+            int sq = row * 8 + col;
+            if (expected & (1ULL << sq)) {
+                printf("■ ");
+            } else {
+                printf("· ");
+            }
+        }
+
+        printf("    %d ", 8 - row);
+
+        // Actual
+        for (int col = 0; col < 8; col++) {
+            int sq = row * 8 + col;
+            bool isDiff = (diff & (1ULL << sq)) != 0;
+            if (actual & (1ULL << sq)) {
+                printf("%s ", isDiff ? "+" : "■");
+            } else {
+                printf("%s ", isDiff ? "X" : "·");
+            }
+        }
+        printf("%d\n", 8 - row);
+    }
+
+    printf("    a b c d e f g h        a b c d e f g h\n");
+    printf("    (expected)              (actual: X=missing, +=extra)\n");
+    printf("\n");
+
+    if (missingCount > 0) {
+        printf("  Missing pieces (%d): ", missingCount);
+        Bitboard m = missing;
+        while (m) {
+            int sq = getLSBindex(m);
+            printf("%c%d ", 'a' + (sq % 8), 8 - (sq / 8));
+            m &= m - 1;
+        }
+        printf("\n");
+    }
+
+    if (extraCount > 0) {
+        printf("  Unexpected pieces (%d): ", extraCount);
+        Bitboard e = extra;
+        while (e) {
+            int sq = getLSBindex(e);
+            printf("%c%d ", 'a' + (sq % 8), 8 - (sq / 8));
+            e &= e - 1;
+        }
+        printf("\n");
+    }
+    printf("\n");
 }
 
 /*** State ***/

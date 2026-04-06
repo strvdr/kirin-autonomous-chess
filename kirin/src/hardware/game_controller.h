@@ -21,6 +21,10 @@
 *    - Converting engine piece types to physical piece types
 *    - Orchestrating move execution on the physical board                    
 *    - Special move handling (castling, en passant, promotion)
+<<<<<<< HEAD
+=======
+*    - Detecting human moves via hall effect sensor scanning
+>>>>>>> bc57295dcdaad197d316eef08374e85b225511c8
 *     
 *    IMPORTANT: This header is designed to be included AFTER board_interpreter.h
 *    but BEFORE any engine headers to avoid macro conflicts.
@@ -31,6 +35,7 @@
 
 #include "board_interpreter.h"
 #include "gantry_controller.h"
+#include "board_scanner.h"
 
 /************ Engine Move Decoding Helpers ************/
 // Inline wrappers around the engine's move encoding bit layout.
@@ -123,6 +128,7 @@ inline int boardCoordToSquare(const BoardCoord& coord) {
 class GameController {
 private:
     Gantry::GrblController gantry;
+    BoardScanner scanner;
     PhysicalBoard physicalBoard;
     
     // State
@@ -136,6 +142,9 @@ private:
     bool executePromotionInternal(int engineMove);
     bool executeNormalMove(int engineMove);
     
+    // Callback for illegal board state detection
+    static void onIllegalState();
+    
 public:
     GameController();
     ~GameController();
@@ -148,6 +157,12 @@ public:
      * @return True if connection successful
      */
     bool connectHardware(const char* port);
+    
+    /**
+     * Initialize the board scanner hardware
+     * @return True if scanner initialization succeeded
+     */
+    bool initScanner();
     
     /**
      * Home the gantry (move to reference position)
@@ -180,13 +195,34 @@ public:
     bool executeEngineMove(int engineMove);
     
     /**
-     * Execute a human move given in algebraic notation
+     * Execute a human move given in algebraic notation (typed input)
      * Parses the move string and converts to engine format
      * 
      * @param moveStr Move in format like "e2e4", "e7e8q" (promotion)
      * @return True if move executed successfully
      */
     bool executeHumanMove(const char* moveStr);
+    
+    /**
+     * Wait for a human player to make a move on the physical board.
+     * Uses the hall effect sensors to detect piece movement, then
+     * validates the detected move against the engine's legal move list.
+     *
+     * This is the primary interface for sensor-based human input.
+     * It handles all move types (normal, capture, castling, en passant,
+     * promotion) by waiting until the board state corresponds to exactly
+     * one legal move.
+     *
+     * The human can take as long as they want — there is no timeout
+     * that auto-commits a move. If the board sits in an invalid state
+     * for too long (e.g., the player knocked a piece over), the system
+     * will alert them via a callback but continue waiting patiently.
+     *
+     * @param[out] engineMove  Set to the matched engine move on success
+     * @param timeoutMs        Maximum wait time (0 = wait forever)
+     * @return True if a legal move was detected, false on timeout
+     */
+    bool waitForHumanMove(int& engineMove, int timeoutMs = 0);
     
     /*** Special Moves ***/
     
@@ -217,6 +253,31 @@ public:
      */
     bool executePromotion(int engineMove);
     
+    /*** Board Verification ***/
+
+    /**
+     * Scan the physical board and verify it matches the engine's expected state.
+     * Call this after gantry moves to catch dropped pieces, missed steps, or
+     * failed magnet engagement.
+     *
+     * @param[out] expectedOcc  Set to the engine's expected occupancy
+     * @param[out] actualOcc    Set to the sensor scan result
+     * @return True if the physical board matches the engine's expected state
+     */
+    bool verifyBoardState(Bitboard& expectedOcc, Bitboard& actualOcc);
+
+    /**
+     * Convenience overload: verify and print diagnostics on mismatch.
+     * @return True if board matches engine state
+     */
+    bool verifyBoardState();
+
+    /**
+     * Print a diagnostic showing which squares differ between expected
+     * and actual board states.
+     */
+    static void printBoardMismatch(Bitboard expected, Bitboard actual);
+
     /*** State ***/
     
     /**
@@ -238,9 +299,19 @@ public:
     Gantry::GrblController& getGantry() { return gantry; }
     
     /**
+     * Get the board scanner (for diagnostics and direct access)
+     */
+    BoardScanner& getScanner() { return scanner; }
+    
+    /**
      * Check if hardware is connected
      */
     bool isConnected() const { return gantry.isConnected(); }
+    
+    /**
+     * Check if the scanner is ready
+     */
+    bool isScannerReady() const { return scanner.isInitialized(); }
     
     /**
      * Set which side the engine plays
@@ -251,6 +322,11 @@ public:
      * Check if it's the engine's turn
      */
     bool isEngineTurn() const;
+    
+    /**
+     * Check if it's the human's turn
+     */
+    bool isHumanTurn() const { return !isEngineTurn(); }
     
     /**
      * Start a new game with the engine playing the specified side
