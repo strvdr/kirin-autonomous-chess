@@ -1,6 +1,6 @@
 # Kirin Chess Engine — Test Results
 
-> Generated: 2026-02-25 01:57 UTC  
+> Generated: 2026-04-06 01:50 UTC  
 > Run `cmake --build build --target test_report` to refresh.
 
 ![tests](https://img.shields.io/badge/tests-364%2F364+passing-brightgreen)
@@ -12,7 +12,7 @@
 | Captured Piece Detection | ✅ | 10 | 0 | 0.00 s |
 | Board Interpreter | ✅ | 63 | 0 | 0.00 s |
 | Game Controller | ✅ | 235 | 0 | 0.00 s |
-| Engine Validity & Skill Level | ✅ | 56 | 0 | 0.08 s |
+| Engine Validity & Skill Level | ✅ | 56 | 0 | 0.18 s |
 | **Total** | ✅ | **364** | **0** | — |
 
 ## Detail
