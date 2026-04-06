@@ -122,6 +122,17 @@ target_include_directories(kirin_hardware PUBLIC
 )
 target_link_libraries(kirin_hardware PUBLIC kirin_engine)
 
+# Link libgpiod when GPIO support is enabled
+if(CMAKE_CXX_FLAGS MATCHES "HAS_GPIOD" OR DEFINED HAS_GPIOD)
+    find_library(GPIOD_LIB gpiod)
+    if(GPIOD_LIB)
+        target_link_libraries(kirin_hardware PUBLIC ${GPIOD_LIB})
+        message(STATUS "libgpiod found: ${GPIOD_LIB}")
+    else()
+        message(WARNING "HAS_GPIOD defined but libgpiod not found — GPIO calls will fail at link time")
+    endif()
+endif()
+
 # ============================================
 # Main Executable
 # ============================================

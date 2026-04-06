@@ -1,0 +1,40 @@
+\contentsline {chapter}{\numberline {1}Overview}{4}{chapter.1}%
+\contentsline {section}{\numberline {1.1}What This Document Covers}{4}{section.1.1}%
+\contentsline {section}{\numberline {1.2}System Architecture}{4}{section.1.2}%
+\contentsline {section}{\numberline {1.3}Prerequisites}{5}{section.1.3}%
+\contentsline {chapter}{\numberline {2}Building the Software}{6}{chapter.2}%
+\contentsline {section}{\numberline {2.1}Clone and Build}{6}{section.2.1}%
+\contentsline {section}{\numberline {2.2}Install Dependencies}{6}{section.2.2}%
+\contentsline {section}{\numberline {2.3}Run the Tests}{6}{section.2.3}%
+\contentsline {chapter}{\numberline {3}Wiring the Hall Effect Sensors}{8}{chapter.3}%
+\contentsline {section}{\numberline {3.1}Sensor Overview}{8}{section.3.1}%
+\contentsline {section}{\numberline {3.2}Multiplexer Wiring}{8}{section.3.2}%
+\contentsline {subsection}{\numberline {3.2.1}Shared Select Lines (Pi $\rightarrow $ All 6 Muxes)}{8}{subsection.3.2.1}%
+\contentsline {subsection}{\numberline {3.2.2}Signal Output Lines (Each Mux $\rightarrow $ Pi)}{8}{subsection.3.2.2}%
+\contentsline {subsection}{\numberline {3.2.3}Power and Enable}{9}{subsection.3.2.3}%
+\contentsline {section}{\numberline {3.3}Sensor-to-Channel Mapping}{9}{section.3.3}%
+\contentsline {section}{\numberline {3.4}A3144 Sensor Circuit}{9}{section.3.4}%
+\contentsline {chapter}{\numberline {4}Connecting the Gantry}{11}{chapter.4}%
+\contentsline {section}{\numberline {4.1}GRBL Connection}{11}{section.4.1}%
+\contentsline {section}{\numberline {4.2}GRBL Settings}{11}{section.4.2}%
+\contentsline {section}{\numberline {4.3}Electromagnet Control}{12}{section.4.3}%
+\contentsline {section}{\numberline {4.4}Physical Coordinate System}{12}{section.4.4}%
+\contentsline {chapter}{\numberline {5}First Power-On Procedure}{13}{chapter.5}%
+\contentsline {section}{\numberline {5.1}Step 1: Verify GPIO Chip}{13}{section.5.1}%
+\contentsline {section}{\numberline {5.2}Step 2: Start Kirin in Physical Mode}{13}{section.5.2}%
+\contentsline {section}{\numberline {5.3}Step 3: Run Sensor Diagnostics}{13}{section.5.3}%
+\contentsline {section}{\numberline {5.4}Step 4: Quick Scan}{14}{section.5.4}%
+\contentsline {section}{\numberline {5.5}Step 5: Test the Gantry}{14}{section.5.5}%
+\contentsline {section}{\numberline {5.6}Step 6: Gantry Coordinate Calibration}{14}{section.5.6}%
+\contentsline {chapter}{\numberline {6}Running Your First Game}{15}{chapter.6}%
+\contentsline {section}{\numberline {6.1}Stage 1: Manual Move Entry (No Sensors)}{15}{section.6.1}%
+\contentsline {section}{\numberline {6.2}Stage 2: Sensor-Based Play}{15}{section.6.2}%
+\contentsline {subsection}{\numberline {6.2.1}What to Test}{15}{subsection.6.2.1}%
+\contentsline {section}{\numberline {6.3}Stage 3: Full Game}{16}{section.6.3}%
+\contentsline {chapter}{\numberline {7}Troubleshooting}{17}{chapter.7}%
+\contentsline {section}{\numberline {7.1}Sensor Issues}{17}{section.7.1}%
+\contentsline {section}{\numberline {7.2}Gantry Issues}{18}{section.7.2}%
+\contentsline {section}{\numberline {7.3}Move Detection Issues}{18}{section.7.3}%
+\contentsline {chapter}{\numberline {8}GPIO Pin Reference}{19}{chapter.8}%
+\contentsline {chapter}{\numberline {9}Software Command Reference}{20}{chapter.9}%
+\contentsline {chapter}{\numberline {10}Tunable Parameters}{21}{chapter.10}%

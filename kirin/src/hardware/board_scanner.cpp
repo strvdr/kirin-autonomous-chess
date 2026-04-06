@@ -30,6 +30,9 @@
 // Use libgpiod on Linux for GPIO access (modern interface, no root required)
 // Define HAS_GPIOD at build time (e.g. -DHAS_GPIOD) when libgpiod-dev is installed.
 // On the Pi: sudo apt install libgpiod-dev
+//
+// This code targets libgpiod v2.x (shipped with Raspberry Pi OS Bookworm+).
+// The v2 API uses gpiod_line_request objects instead of individual gpiod_line handles.
 #ifdef HAS_GPIOD
 #include <gpiod.h>
 #define HAS_GPIO 1
@@ -38,15 +41,18 @@
 #endif
 
 /************ GPIO Handle (internal) ************/
-// Wraps libgpiod state so the header doesn't need to include gpiod.h
+// Wraps libgpiod v2 state so the header doesn't need to include gpiod.h
 #if HAS_GPIO
 static struct gpiod_chip* gpioChip = nullptr;
 
-// Select lines (output)
-static struct gpiod_line* selectLines[4] = {};
+// In v2, lines are requested in bulk via gpiod_line_request objects.
+// We use two requests: one for the 4 output select lines, one for the 6 input mux lines.
+static struct gpiod_line_request* selectRequest = nullptr;  // 4 output lines (S0-S3)
+static struct gpiod_line_request* muxRequest    = nullptr;  // 6 input lines (mux SIG)
 
-// Mux output lines (input) — now 6 muxes
-static struct gpiod_line* muxLines[TOTAL_MUX_COUNT] = {};
+// Store the GPIO offsets so we can reference them in set/get calls
+static unsigned int selectOffsets[4] = {};
+static unsigned int muxOffsets[TOTAL_MUX_COUNT] = {};
 #endif
 
 /************ Constructor / Destructor ************/
@@ -83,11 +89,13 @@ BoardScanner::BoardScanner(const int sPins[4], const int mPins[TOTAL_MUX_COUNT])
 BoardScanner::~BoardScanner() {
 #if HAS_GPIO
     if (initialized && !simulationMode) {
-        for (int i = 0; i < 4; i++) {
-            if (selectLines[i]) gpiod_line_release(selectLines[i]);
+        if (selectRequest) {
+            gpiod_line_request_release(selectRequest);
+            selectRequest = nullptr;
         }
-        for (int i = 0; i < TOTAL_MUX_COUNT; i++) {
-            if (muxLines[i]) gpiod_line_release(muxLines[i]);
+        if (muxRequest) {
+            gpiod_line_request_release(muxRequest);
+            muxRequest = nullptr;
         }
         if (gpioChip) {
             gpiod_chip_close(gpioChip);
@@ -108,37 +116,104 @@ bool BoardScanner::init() {
 
 #if HAS_GPIO
     // Open the GPIO chip (Pi 5 uses gpiochip4, Pi 4 uses gpiochip0)
-    gpioChip = gpiod_chip_open("/dev/gpiochip4");
-    if (!gpioChip) {
-        gpioChip = gpiod_chip_open("/dev/gpiochip0");
+    const char* chipPaths[] = { "/dev/gpiochip4", "/dev/gpiochip0", nullptr };
+    for (int i = 0; chipPaths[i] != nullptr; i++) {
+        gpioChip = gpiod_chip_open(chipPaths[i]);
+        if (gpioChip) {
+            printf("[SCANNER] Opened GPIO chip: %s\n", chipPaths[i]);
+            break;
+        }
     }
     if (!gpioChip) {
         fprintf(stderr, "[SCANNER] Error: could not open GPIO chip\n");
         return false;
     }
 
-    // Request select lines as outputs (active-high, default low)
-    for (int i = 0; i < 4; i++) {
-        selectLines[i] = gpiod_chip_get_line(gpioChip, selectPins[i]);
-        if (!selectLines[i]) {
-            fprintf(stderr, "[SCANNER] Error: could not get select line GPIO %d\n", selectPins[i]);
+    // --- Request select lines as outputs (S0-S3) ---
+    {
+        struct gpiod_line_settings* settings = gpiod_line_settings_new();
+        if (!settings) {
+            fprintf(stderr, "[SCANNER] Error: could not create line settings\n");
             return false;
         }
-        if (gpiod_line_request_output(selectLines[i], "kirin-scanner", 0) < 0) {
-            fprintf(stderr, "[SCANNER] Error: could not request select line GPIO %d as output\n", selectPins[i]);
+        gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
+        gpiod_line_settings_set_output_value(settings, GPIOD_LINE_VALUE_INACTIVE);
+
+        struct gpiod_line_config* lineConfig = gpiod_line_config_new();
+        if (!lineConfig) {
+            gpiod_line_settings_free(settings);
+            fprintf(stderr, "[SCANNER] Error: could not create line config\n");
+            return false;
+        }
+
+        for (int i = 0; i < 4; i++) {
+            selectOffsets[i] = static_cast<unsigned int>(selectPins[i]);
+        }
+        if (gpiod_line_config_add_line_settings(lineConfig, selectOffsets, 4, settings) < 0) {
+            fprintf(stderr, "[SCANNER] Error: could not add select line settings\n");
+            gpiod_line_settings_free(settings);
+            gpiod_line_config_free(lineConfig);
+            return false;
+        }
+
+        struct gpiod_request_config* reqConfig = gpiod_request_config_new();
+        if (reqConfig) {
+            gpiod_request_config_set_consumer(reqConfig, "kirin-scanner");
+        }
+
+        selectRequest = gpiod_chip_request_lines(gpioChip, reqConfig, lineConfig);
+
+        if (reqConfig) gpiod_request_config_free(reqConfig);
+        gpiod_line_config_free(lineConfig);
+        gpiod_line_settings_free(settings);
+
+        if (!selectRequest) {
+            fprintf(stderr, "[SCANNER] Error: could not request select lines (GPIO %d,%d,%d,%d)\n",
+                    selectPins[0], selectPins[1], selectPins[2], selectPins[3]);
             return false;
         }
     }
 
-    // Request all 6 mux output lines as inputs
-    for (int i = 0; i < TOTAL_MUX_COUNT; i++) {
-        muxLines[i] = gpiod_chip_get_line(gpioChip, muxPins[i]);
-        if (!muxLines[i]) {
-            fprintf(stderr, "[SCANNER] Error: could not get mux line GPIO %d\n", muxPins[i]);
+    // --- Request mux SIG lines as inputs (6 lines) ---
+    {
+        struct gpiod_line_settings* settings = gpiod_line_settings_new();
+        if (!settings) {
+            fprintf(stderr, "[SCANNER] Error: could not create line settings\n");
             return false;
         }
-        if (gpiod_line_request_input(muxLines[i], "kirin-scanner") < 0) {
-            fprintf(stderr, "[SCANNER] Error: could not request mux line GPIO %d as input\n", muxPins[i]);
+        gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_INPUT);
+
+        struct gpiod_line_config* lineConfig = gpiod_line_config_new();
+        if (!lineConfig) {
+            gpiod_line_settings_free(settings);
+            fprintf(stderr, "[SCANNER] Error: could not create line config\n");
+            return false;
+        }
+
+        for (int i = 0; i < TOTAL_MUX_COUNT; i++) {
+            muxOffsets[i] = static_cast<unsigned int>(muxPins[i]);
+        }
+        if (gpiod_line_config_add_line_settings(lineConfig, muxOffsets, TOTAL_MUX_COUNT, settings) < 0) {
+            fprintf(stderr, "[SCANNER] Error: could not add mux line settings\n");
+            gpiod_line_settings_free(settings);
+            gpiod_line_config_free(lineConfig);
+            return false;
+        }
+
+        struct gpiod_request_config* reqConfig = gpiod_request_config_new();
+        if (reqConfig) {
+            gpiod_request_config_set_consumer(reqConfig, "kirin-scanner");
+        }
+
+        muxRequest = gpiod_chip_request_lines(gpioChip, reqConfig, lineConfig);
+
+        if (reqConfig) gpiod_request_config_free(reqConfig);
+        gpiod_line_config_free(lineConfig);
+        gpiod_line_settings_free(settings);
+
+        if (!muxRequest) {
+            fprintf(stderr, "[SCANNER] Error: could not request mux lines (GPIO %d,%d,%d,%d,%d,%d)\n",
+                    muxPins[0], muxPins[1], muxPins[2], muxPins[3], muxPins[4], muxPins[5]);
             return false;
         }
     }
@@ -173,10 +248,12 @@ void BoardScanner::setMuxChannel(int channel) {
 #if HAS_GPIO
     if (simulationMode) return;
 
-    // Set S0-S3 from the 4 bits of the channel number
+    // Set S0-S3 from the 4 bits of the channel number.
+    // In libgpiod v2, we set values on the request object using the line offset.
     for (int i = 0; i < 4; i++) {
         int bit = (channel >> i) & 1;
-        gpiod_line_set_value(selectLines[i], bit);
+        enum gpiod_line_value val = bit ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE;
+        gpiod_line_request_set_value(selectRequest, selectOffsets[i], val);
     }
 
     // Allow the mux output to settle
@@ -190,9 +267,9 @@ bool BoardScanner::readMuxOutput(int muxIndex) {
 #if HAS_GPIO
     if (simulationMode) return false;
 
-    int value = gpiod_line_get_value(muxLines[muxIndex]);
-    // A3144 is active-low: 0 = magnet present, 1 = no magnet
-    return (value == 0);
+    enum gpiod_line_value val = gpiod_line_request_get_value(muxRequest, muxOffsets[muxIndex]);
+    // A3144 is active-low: INACTIVE (low) = magnet present, ACTIVE (high) = no magnet
+    return (val == GPIOD_LINE_VALUE_INACTIVE);
 #else
     (void)muxIndex;
     return false;
