@@ -1,273 +1,213 @@
-# To-Do: Hall Effect Sensor — Human Move Detection
-**Kirin Autonomous Chess System v0.4**
+# Kirin — Hardware Integration Checklist
 
-This document tracks the next development phase: replacing typed UCI input in physical
-mode with real-time detection of human moves via a hall effect sensor matrix.
-
----
-
-## Overview
-
-```
-Human lifts piece     → Arduino #2 detects field drop    → reports LIFTED <square>
-Human places piece    → Arduino #2 detects field rise     → reports PLACED <square>
-Arduino #2 sends event over serial
-Host (Kirin) diffs against known physicalBoard state
-Kirin reconstructs UCI move string → parseBoardMove() → engine validates legality
-If legal  → makeMove() → engine turn begins
-If illegal → signal player to redo
-```
+**Target:** Physical prototype operational within one week  
+**Date:** April 2026  
+**Authors:** Strydr Silverberg, Colin Dake
 
 ---
 
-## Phase 1 — Hardware Design & Procurement
+## Legend
 
-- [ ] **Select hall effect sensor IC**
-  - Candidate: AH3144 (latching, digital output) or SS49E (analog, ratiometric)
-  - Latching digital is simpler to read; analog gives richer signal for debugging
-  - Need one per square × 64 squares
-
-- [ ] **Design multiplexer wiring**
-  - 64 sensors → too many direct GPIO pins for a single Arduino
-  - Recommended: 4× CD74HC4067 (16-channel analog mux) on an Arduino Mega
-  - 4 shared address pins (A0–A3) + 4 analog input pins + 4 enable pins
-  - Alternatively: 2× 74HC165 shift registers (serial bitstream on 3 pins)
-  - Decision needed before PCB layout
-
-- [ ] **Design piece magnet placement**
-  - Each chess piece needs a small permanent magnet in its base
-  - Magnet orientation matters for latching sensors — standardize polarity
-  - Verify sensor trigger distance matches board thickness + piece base clearance
-
-- [ ] **Decide on Arduino #2 board**
-  - Arduino Mega 2560 recommended (54 digital I/O, 16 analog inputs)
-  - Needs: one hardware serial port for host comms, one for debug (optional)
-
-- [ ] **Plan PCB or perfboard layout**
-  - Sensor grid must align exactly with 2" × 2" square centers
-  - Board sits above gantry — sensors face down toward magnet beneath each square
-  - Route sensor power/ground bus to minimize noise
+- ✅ Complete and tested
+- 🔲 Not started
+- ⚠️ Partially done / needs verification on hardware
 
 ---
 
-## Phase 2 — Arduino #2 Firmware
+## 1. Software — Complete and Tested
 
-- [ ] **Implement sensor polling loop**
-  - Scan all 64 sensors in sequence via multiplexer address cycling
-  - Store 64-bit occupancy bitmask (`uint64_t boardState`)
-  - Target scan rate: ≥ 20 Hz (50ms full cycle)
+These components are implemented, passing all tests, and ready for integration.
 
-- [ ] **Implement debounce logic**
-  - A square transition is only valid after N consecutive consistent readings
-  - Recommended threshold: 3 readings (~150ms at 20 Hz)
-  - Prevents false triggers from piece wobble or gantry vibration
-
-- [ ] **Implement "gantry active" inhibit**
-  - While the gantry is moving, the electromagnet will trip sensors
-  - Host sends `GANTRY_START` / `GANTRY_DONE` over serial
-  - While inhibited: continue scanning but do not report transitions
-  - Resume reporting immediately on `GANTRY_DONE`
-
-- [ ] **Implement serial reporting protocol**
-  - Propose simple newline-delimited ASCII protocol:
-    ```
-    LIFTED e2       # piece removed from e2
-    PLACED e4       # piece placed on e4
-    READY           # sent on boot / after reset
-    ```
-  - Alternative: send raw 64-bit bitmask after each stable state change
-    and let Kirin do all interpretation (simpler firmware, more host logic)
-  - **Decision needed:** event-based vs. bitmask-based — pick one before implementing
-
-- [ ] **Implement special move detection helpers (optional on Arduino)**
-  - Castling: 4 square changes in one turn (King + Rook both move)
-  - En passant: 3 square changes (pawn moves, captured pawn disappears)
-  - Could detect these patterns on Arduino and send a single `SPECIAL` tag,
-    or let Kirin handle disambiguation entirely (recommended — keep firmware simple)
-
-- [ ] **Write Arduino firmware tests**
-  - Bench test: manually trigger sensors, verify correct square labels reported
-  - Debounce test: rapid triggering should not produce spurious events
-  - Inhibit test: transitions during `GANTRY_START` window must be suppressed
+- ✅ Chess engine (search, evaluation, move generation, UCI)
+- ✅ Board interpreter (path planning, blocker detection, A* pathfinding)
+- ✅ Gantry controller (coordinate translation, G-code generation, GRBL serial)
+- ✅ Game controller (engine ↔ physical board bridge, special move handling)
+- ✅ Board scanner — hall effect sensor scanning via multiplexed GPIO (6 muxes, 96 sensors)
+- ✅ Storage-aware capture detection (`matchLegalMove` with `storageChanged` gate)
+- ✅ Human move detection (`waitForLegalMove` — legal-move-matching loop)
+- ✅ `GameController::waitForHumanMove()` integration
+- ✅ Sensor game loop (`runSensorGameLoop` in `main.cpp`, `play` command)
+- ✅ Dry-run mode (full pipeline without hardware)
+- ✅ Simulation mode (manual move entry with G-code inspection)
+- ✅ Test suite: board scanner (62/62 passing — captures, pondering, castling, en passant, promotion, transients)
+- ✅ Test suite: game controller, board interpreter, engine, captured piece detection
 
 ---
 
-## Phase 3 — Kirin Software: `HallSensorReader` Class
+## 2. Pre-Integration — Software Tasks
 
-New file: `src/hardware/hall_sensor_reader.h/.cpp`
+These should be done before first hardware power-on.
 
-- [ ] **Define `HallSensorReader` class interface**
-  ```cpp
-  class HallSensorReader {
-  public:
-      bool connect(const char* port, int baudRate = 115200);
-      void disconnect();
-      bool isConnected() const;
+### 2.1 Board Verification After Engine Moves (Priority: HIGH)
 
-      void notifyGantryStart();   // sends GANTRY_START to Arduino #2
-      void notifyGantryDone();    // sends GANTRY_DONE to Arduino #2
+After the gantry executes a move, scan the board and verify the physical
+state matches what the engine expects. Catches dropped pieces, failed magnet
+engagement, or missed steps.
 
-      // Blocks until a complete, valid human move is detected.
-      // Returns UCI move string (e.g., "e2e4") or "" on error/timeout.
-      std::string waitForHumanMove(const PhysicalBoard& knownState);
+- ✅ Add `verifyBoardState()` method to `GameController`
+  - Scan board with `scanner.scanBoardDebounced()`
+  - Compare against `occupancy[both]` (engine's expected state)
+  - Return a diff if mismatch, or `true` if matches
+- ✅ Call `verifyBoardState()` after every `executeEngineMove()` in `runSensorGameLoop`
+- ✅ If mismatch detected: pause game, print diagnostic, alert player
+- ✅ Add test: simulate a mismatch and verify detection
 
-  private:
-      int serialFd;
-      bool connected;
-      std::string readLine(int timeoutMs);
-      bool send(const std::string& msg);
-  };
-  ```
+### 2.2 Game Start Verification (Priority: HIGH)
 
-- [ ] **Implement `connect()` / `disconnect()`**
-  - Mirrors `GrblController` serial setup (8N1, 115200 baud)
-  - Can share the serial utility code or factor into a common `SerialPort` base
+After `setupNewGame()` moves all pieces from storage to starting positions,
+verify the board matches the expected starting occupancy.
 
-- [ ] **Implement `waitForHumanMove()`**
-  - Read `LIFTED` and `PLACED` events from Arduino #2
-  - Diff against `knownState` (the `physicalBoard` after the engine's last move)
-  - Reconstruct UCI string from the two squares
-  - Handle multi-square patterns (castling = King LIFTED + King PLACED +
-    Rook LIFTED + Rook PLACED)
-  - Return UCI string; caller (`GameController`) validates legality via
-    `parseBoardMove()`
+- ✅ Scan board after `setupNewGame()` returns
+- ✅ Compare against starting position occupancy (`0xFFFF00000000FFFF`)
+- ✅ If mismatch: report which squares are wrong, allow retry
 
-- [ ] **Handle illegal move feedback loop**
-  - If `parseBoardMove()` returns 0 (illegal), do NOT update engine state
-  - Send an error signal (TBD — serial message to a status LED Arduino, or
-    log to console for now)
-  - Call `waitForHumanMove()` again (player must reset their piece and retry)
+### 2.3 Error Recovery (Priority: MEDIUM)
 
-- [ ] **Handle en passant square disappearance**
-  - En passant: human's pawn moves diagonally to an empty square; the
-    captured pawn's square also clears (that pawn was never physically
-    picked up by the human — it was captured "in passing")
-  - `waitForHumanMove()` must recognize 3-square patterns and pass the
-    full context to `parseBoardMove()` for disambiguation
+Ensure engine state only advances after confirmed physical execution.
 
----
+- ✅ Audit `runSensorGameLoop`: confirm `makeMove()` is called AFTER `executeEngineMove()` succeeds
+- ✅ Add rollback path: if gantry fails mid-move, engine state must not advance
+- ✅ Currently `executeEngineMove()` updates `physicalBoard` internally — if gantry fails partway through a multi-step move (castling, blocker relocation), the physical board tracking may be partially updated. Consider making updates atomic.
 
-## Phase 4 — Integration into `GameController`
+### 2.4 Ambiguous Capture Fallback (Priority: LOW)
 
-- [ ] **Add `HallSensorReader` as a member of `GameController`**
-  ```cpp
-  // game_controller.h
-  private:
-      Gantry::GrblController gantry;
-      HallSensorReader hallSensor;   // NEW
-      PhysicalBoard physicalBoard;
-  ```
+In the rare case where multiple legal captures produce identical sensor occupancy
+(e.g., queen can capture two different pawns from the same square), the system
+hangs waiting for a move that can never resolve.
 
-- [ ] **Add `connectSensorArray(const char* port)` to `GameController`**
-  - Called from `runPhysicalMode()` alongside `connectHardware()`
+- 🔲 Add a timeout (e.g., 30 seconds of stable ambiguous state)
+- 🔲 On timeout: print available options and fall back to manual input (`move` command)
+- 🔲 OR: use storage slot identity to determine which piece was captured (requires knowing which slot maps to which piece type)
 
-- [ ] **Add `notifyGantryActive(bool active)` bridge method**
-  - Called by `executeEngineMove()` before and after gantry moves
-  - Forwards to `hallSensor.notifyGantryStart()` / `notifyGantryDone()`
+### 2.5 Promotion UI for Human Player (Priority: LOW)
 
-- [ ] **Replace typed input in `runPhysicalMode()` game loop**
+Currently defaults to queen promotion. Fine for prototype, but eventually:
 
-  Current (typed input):
-  ```cpp
-  // Human types: "move e2e4"
-  int move = parseBoardMove(moveStr);
-  ```
-
-  Target (physical detection):
-  ```cpp
-  printf("Your turn. Move a piece.\n");
-  std::string uciMove = controller.waitForHumanMove();
-  int move = parseBoardMove(uciMove.c_str());
-  ```
-
-- [ ] **Update `startGame()` to accept two serial ports**
-  - Current: one port for gantry
-  - New: `startGame(const char* gantryPort, const char* sensorPort)`
+- 🔲 Detect underpromotion intent (physical button? specific storage slot?)
+- 🔲 For now: document that all promotions are queen
 
 ---
 
-## Phase 5 — New Run Mode: `--sensor-test`
+## 3. Hardware Integration — First Power-On
 
-Add a new CLI mode for isolated sensor debugging without a full game.
+Tasks for when the physical prototype is assembled.
 
-- [ ] **Add `MODE_SENSOR_TEST` to `RunMode` enum in `main.cpp`**
-- [ ] **Implement `runSensorTestMode(const char* port)`**
-  - Connects to Arduino #2 only
-  - Prints every `LIFTED` / `PLACED` event to console in real time
-  - Displays a live ASCII board diagram showing current sensor state
-  - Useful for verifying wiring and sensor calibration before integration
+### 3.1 Sensor Calibration
 
-- [ ] **Add `--sensor-test PORT` to CLI help text and argument parser**
+- 🔲 Run `kirin --physical /dev/ttyUSB0` → `diag` command
+- 🔲 Verify all 64 board sensors read correctly (each square individually)
+- 🔲 Verify all 32 storage sensors read correctly (16 per side)
+- 🔲 Check for dead/stuck sensors — replace or re-wire
+- 🔲 Verify active-low polarity: piece present = LOW, empty = HIGH
+- 🔲 Tune `MUX_SETTLE_US` (currently 10μs) — increase if readings are noisy
+- 🔲 Tune `DEBOUNCE_SCANS` (currently 3) and `DEBOUNCE_DELAY_MS` (currently 50ms)
 
----
+### 3.2 Sensor-to-Square Mapping Verification
 
-## Phase 6 — Testing
+- 🔲 Place a single piece on a1, run `scan` — verify bit 56 is set (engine square a1)
+- 🔲 Repeat for a8 (bit 0), h1 (bit 63), h8 (bit 7)
+- 🔲 Verify all 64 squares map correctly — the mux channel-to-square wiring must match `toSquareIndex()`
+- 🔲 If wiring differs from expected layout, update `toSquareIndex()` or re-wire
 
-- [ ] **Unit tests: `hall_sensor_reader_test.cpp`**
-  - Mock serial input (pipe or file-backed fd)
-  - Test normal move reconstruction from LIFTED/PLACED pair
-  - Test castling 4-event sequence → correct UCI string
-  - Test en passant 3-event sequence → correct UCI string
-  - Test illegal move → returns empty string, does not modify board state
-  - Test gantry inhibit: events during inhibit window are dropped
+### 3.3 Storage Zone Mapping
 
-- [ ] **Integration test: sensor → engine pipeline**
-  - Drive mock sensor events through `waitForHumanMove()` →
-    `parseBoardMove()` → `makeMove()` for a known game sequence
-  - Verify `physicalBoard` matches engine state after each move
+- 🔲 Place a piece in black storage slot 0, run `scan` — verify bit 0 of black storage
+- 🔲 Verify channel mapping: channels 0–7 = back-rank piece slots, 8–15 = pawn slots
+- 🔲 Confirm slot positions physically match `getCapturePosition()` coordinates
 
-- [ ] **Hardware-in-loop test (bench, no full game)**
-  - Place and lift pieces on the physical board
-  - Verify correct square names reported end-to-end through to Kirin
-  - Test edge cases: a1, h1, a8, h8 (corner sensors)
+### 3.4 Gantry Calibration
 
----
+- 🔲 Home the gantry (`home` command) — verify limit switches trigger correctly
+- 🔲 Run `test` command — verify gantry moves to e4, d5, engages/disengages magnet
+- 🔲 Verify `toPhysical()` coordinates match actual board square centers
+  - Place piece on a1, command gantry to a1, check alignment
+  - Repeat for h8, e4 (center)
+- 🔲 Verify capture zone coordinates (`getCapturePosition()`) align with physical slots
+- 🔲 Tune `FEED_RATE` (currently 1000 in/min) — too fast may skip steps, too slow wastes time
+- 🔲 Verify magnet engagement: piece lifts reliably, doesn't drag adjacent pieces
 
-## Phase 7 — README & Documentation Updates
+### 3.5 Gantry + Sensor Interaction
 
-- [ ] **Update `README.md`**
-  - Add `HallSensorReader` to architecture diagram
-  - Add sensor Arduino to hardware section (board, wiring summary, baud rate)
-  - Update `--physical` usage to show two-port invocation
-  - Add `--sensor-test` mode to usage table
-  - Update development status table: mark hall effect detection as in progress
+- 🔲 Execute a gantry move and verify the sensors detect the change
+- 🔲 Check for electromagnetic interference: does the gantry magnet trigger nearby sensors?
+- 🔲 Check for stepper motor noise affecting sensor readings
+- 🔲 If interference exists: add shielding or increase `DEBOUNCE_SCANS`
 
-- [ ] **Add wiring reference section to README**
-  - Multiplexer pin assignments
-  - Arduino #2 serial port used for host comms
-  - Signal line between host and Arduino #2 for gantry inhibit
+### 3.6 GPIO Pin Conflicts
 
----
-
-## Open Decisions (Must Resolve Before Coding)
-
-| # | Question | Options | Notes |
-|---|---|---|---|
-| 1 | Sensor IC type | AH3144 (digital latching) vs SS49E (analog) | Digital simpler; analog better for tuning |
-| 2 | Multiplexer approach | CD74HC4067 mux vs 74HC165 shift register | Mux easier to wire; shift reg uses fewer pins |
-| 3 | Arduino #2 board | Mega 2560 vs Uno + expander | Mega preferred for pin count headroom |
-| 4 | Serial protocol | Event-based (LIFTED/PLACED) vs raw bitmask | Event-based cleaner; bitmask simpler firmware |
-| 5 | Gantry inhibit signal | Serial message vs dedicated GPIO wire | Serial keeps wiring clean |
-| 6 | Illegal move feedback | Console log only vs status LED | LED better UX; needs extra hardware |
-| 7 | Two-port CLI syntax | `--physical /dev/ttyUSB0 --sensor /dev/ttyUSB1` vs single arg | Two explicit flags clearest |
+- 🔲 Verify no pin conflicts between scanner (6 SIG + 4 select = 10 pins) and any other GPIO usage
+- 🔲 Current pin assignments:
+  - Select lines: GPIO 17, 27, 22, 23
+  - Board muxes: GPIO 5, 6, 13, 19
+  - Storage muxes: GPIO 26, 16
+- 🔲 Confirm libgpiod is installed: `sudo apt install libgpiod-dev`
+- 🔲 Confirm build uses `-DHAS_GPIOD` flag
+- 🔲 Test GPIO chip detection: Pi 5 = `/dev/gpiochip4`, Pi 4 = `/dev/gpiochip0`
 
 ---
 
-## Dependency Map
+## 4. Integration Testing — Full Game
 
-```
-Phase 1 (Hardware)
-    └── Phase 2 (Arduino Firmware)
-            └── Phase 3 (HallSensorReader class)
-                    └── Phase 4 (GameController integration)
-                            ├── Phase 5 (sensor-test mode)
-                            └── Phase 6 (testing)
-                                    └── Phase 7 (docs)
-```
+### 4.1 Dry-Run Validation
 
-Phases 1 and 2 can proceed in parallel with Phase 3 if a mock serial source
-is used to develop and test `HallSensorReader` before the Arduino firmware is ready.
+- 🔲 Run `kirin --dryrun 10 4` — inspect all 20 half-moves of G-code for correctness
+- 🔲 Verify capture G-code sends pieces to correct storage slots
+- 🔲 Verify castling executes rook then king
+- 🔲 Verify en passant removes the correct pawn
+
+### 4.2 First Physical Game (Manual Moves)
+
+- 🔲 `newgame black` — engine plays black, you type moves with `move e2e4`
+- 🔲 Verify engine's physical moves execute correctly on the board
+- 🔲 Play at least 10 moves, including one capture
+- 🔲 Verify physical board state matches engine state after each move (`physical` command)
+
+### 4.3 First Sensor-Based Game
+
+- 🔲 `play black` — engine plays black, you make moves physically
+- 🔲 Verify the system detects your moves correctly
+- 🔲 Test: pick up a piece, hold it for 10 seconds, put it back — system should not commit a move
+- 🔲 Test: make a capture — verify storage sensor detects the captured piece
+- 🔲 Test: make an illegal move — verify the system alerts after `ILLEGAL_STATE_ALERT_MS`
+- 🔲 Play a full game to completion (checkmate or stalemate)
+
+### 4.4 Edge Cases to Test on Hardware
+
+- 🔲 Castling (both sides, both colors)
+- 🔲 En passant
+- 🔲 Promotion (pawn reaches 8th rank)
+- 🔲 Multiple captures in a row
+- 🔲 Engine captures one of your pieces — storage zone updates correctly
+- 🔲 New game after a completed game — all pieces return from storage
 
 ---
 
-*Kirin v0.4 development plan — last updated February 2026*
+## 5. Known Limitations (Documented, Not Blockers)
+
+These are known issues that don't block the prototype but should be addressed eventually.
+
+| Issue | Impact | Workaround |
+|-------|--------|------------|
+| Ambiguous captures (same occupancy diff) | Game hangs waiting | Extremely rare; fall back to `move` command |
+| Underpromotion not supported | Always promotes to queen | Acceptable for 99% of games |
+| No physical feedback (buzzer/LED) for illegal states | Player sees terminal output only | Add piezo buzzer on GPIO in future |
+| `physicalBoard` updates not atomic during multi-step moves | Partial state on gantry failure | Restart game if gantry fails mid-move |
+| No draw detection (50-move rule, threefold repetition) | Game doesn't auto-detect draws | Player can quit manually |
+
+---
+
+## 6. File Reference
+
+| File | Status | Description |
+|------|--------|-------------|
+| `board_scanner.h` | ✅ Modified | 96-sensor scanning, `waitForLegalMove`, storage zones |
+| `board_scanner.cpp` | ✅ Modified | Storage-aware `matchLegalMove`, capture disambiguation |
+| `game_controller.h` | ✅ Modified | `BoardScanner` member, `waitForHumanMove`, `initScanner` |
+| `game_controller.cpp` | ✅ Modified | Storage baselines in `syncWithEngine`, `waitForHumanMove` |
+| `main.cpp` | ✅ Modified | `play` command, `runSensorGameLoop`, `scan`, `diag` |
+| `CMakeLists.txt` | ✅ Modified | Added `board_scanner.cpp/.h`, `board_scanner_test` |
+| `board_scanner_test.cpp` | ✅ New | 62 tests covering all move detection logic |
+| `gantry_controller.h` | No changes | Gantry namespace declarations |
+| `gantry_controller.cpp` | No changes | GRBL serial, G-code generation, coordinate translation |
+| `board_interpreter.h/.cpp` | No changes | Path planning, blocker detection |
+| Engine files | No changes | Search, evaluation, move generation |
