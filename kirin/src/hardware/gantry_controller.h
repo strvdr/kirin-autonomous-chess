@@ -45,9 +45,9 @@
 namespace Gantry {
 
 /************ Physical Constants (inches) ************/
-constexpr double RAIL_TRAVEL = 22.0;
-constexpr double BOARD_SIZE = 16.0;
-constexpr double SQUARE_SIZE = 2.0;
+constexpr double RAIL_TRAVEL = 18.0;
+constexpr double BOARD_SIZE = 12.0;
+constexpr double SQUARE_SIZE = 1.5;
 constexpr double BOARD_MARGIN = 3.0;
 
 // Square a1 center position
