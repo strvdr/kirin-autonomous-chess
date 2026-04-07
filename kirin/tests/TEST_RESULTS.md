@@ -1,6 +1,6 @@
 # Kirin Chess Engine — Test Results
 
-> Generated: 2026-04-07 01:24 UTC  
+> Generated: 2026-04-07 01:56 UTC  
 > Run `cmake --build build --target test_report` to refresh.
 
 ![tests](https://img.shields.io/badge/tests-364%2F364+passing-brightgreen)
