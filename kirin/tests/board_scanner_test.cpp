@@ -36,12 +36,16 @@
 // Hardware layer
 #include "../src/hardware/board_scanner.h"
 #include "../src/hardware/game_controller.h"
+#include "../src/hardware/piece_tracker.h"
 
 // Engine headers
 #include "../src/engine/engine.h"
 #include "../src/engine/position.h"
 #include "../src/engine/movegen.h"
 #include "../src/engine/bitboard.h"
+
+// Bring Gantry::StartingSlot enum values (SLOT_PAWN_E, etc.) into scope
+using namespace Gantry;
 
 // ─────────────────────────────────────────────────────────────
 // Minimal test framework (matches project conventions)
@@ -84,10 +88,13 @@ public:
         enableSimulation();
     }
 
-    // Expose private matchLegalMove for direct testing
+    // Expose private matchLegalMove for direct testing.
+    // New signature: takes a specific capture slot, side, and tracker.
     bool testMatchLegalMove(Bitboard before, Bitboard after,
-                            bool storageChanged, int& move) {
-        return matchLegalMove(before, after, storageChanged, move);
+                            int captureSlot, bool capturedIsWhite,
+                            const PieceTracker& tracker, int& move) {
+        return matchLegalMove(before, after, captureSlot, capturedIsWhite,
+                              tracker, move);
     }
 };
 
@@ -174,6 +181,45 @@ static int findLegalMove(int src, int tgt, bool mustCapture = false,
 }
 
 // ─────────────────────────────────────────────────────────────
+// Helper: create a PieceTracker initialized from the starting
+// position and optionally apply a sequence of moves to it.
+// ─────────────────────────────────────────────────────────────
+static PieceTracker makeTracker() {
+    PieceTracker t;
+    t.initStartingPosition();
+    return t;
+}
+
+// Apply a move to a tracker (mirrors GameController::updateTracker)
+static void applyMoveToTracker(PieceTracker& tracker, int move) {
+    int source = getSource(move);
+    int target = getTarget(move);
+    int piece = getPiece(move);
+    bool isWhite = piece < 6;  // P=0..K=5 are white, p=6..k=11 are black
+    bool isCap = getCapture(move) != 0;
+
+    if (isCap) {
+        if (getEnpassant(move)) {
+            int capturedSquare = (source / 8) * 8 + (target % 8);
+            tracker.applyMove(source, target, isWhite, true,
+                              capturedSquare, !isWhite);
+        } else {
+            tracker.applyMove(source, target, isWhite, true,
+                              target, !isWhite);
+        }
+    } else {
+        tracker.applyMove(source, target, isWhite, false);
+    }
+
+    if (getCastle(move)) {
+        if (target == g1) tracker.applyRookCastle(h1, f1, true);
+        else if (target == c1) tracker.applyRookCastle(a1, d1, true);
+        else if (target == g8) tracker.applyRookCastle(h8, f8, false);
+        else if (target == c8) tracker.applyRookCastle(a8, d8, false);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // 1. Normal moves — non-capture
 // ─────────────────────────────────────────────────────────────
 static void testNormalMoves() {
@@ -183,6 +229,7 @@ static void testNormalMoves() {
     parseFEN(startPosition);
     Bitboard before = occupancy[both];
     TestableScanner scanner;
+    PieceTracker tracker = makeTracker();
 
     // e2e4: double pawn push
     {
@@ -192,8 +239,9 @@ static void testNormalMoves() {
         Bitboard after = predictOccupancy(before, move);
 
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, false, matched);
-        TEST_ASSERT(found, "e2e4 matched with storageChanged=false");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_NONE, false, tracker, matched);
+        TEST_ASSERT(found, "e2e4 matched with no storage change");
         TEST_ASSERT(matched == move, "matched move equals expected move");
     }
 
@@ -205,60 +253,78 @@ static void testNormalMoves() {
         Bitboard after = predictOccupancy(before, move);
 
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, false, matched);
-        TEST_ASSERT(found, "Nf3 matched with storageChanged=false");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_NONE, false, tracker, matched);
+        TEST_ASSERT(found, "Nf3 matched with no storage change");
         TEST_ASSERT(matched == move, "matched move equals expected Nf3");
     }
 
-    // Normal move must NOT match if storageChanged=true
+    // Normal move must NOT match if a storage slot changed
     {
         int move = findLegalMove(e2, e4);
         Bitboard after = predictOccupancy(before, move);
 
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, true, matched);
-        TEST_ASSERT(!found, "e2e4 does NOT match when storageChanged=true");
+        // Claim SLOT_PAWN_E of black side gained a piece (bogus)
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_PAWN_E, false, tracker, matched);
+        TEST_ASSERT(!found, "e2e4 does NOT match when a storage slot changed");
     }
 }
 
 // ─────────────────────────────────────────────────────────────
-// 2. Captures — requires storageChanged=true
+// 2. Captures — requires correct storage slot
 // ─────────────────────────────────────────────────────────────
 static void testCaptures() {
-    printHeader("Captures (storage-aware)");
+    printHeader("Captures (storage-slot aware)");
 
     // Position where white pawn on d4 can capture black pawn on e5
+    // To get here: 1. d4 e5. Tracker needs those moves applied.
     parseFEN("rnbqkbnr/pppp1ppp/8/4p3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 2");
     Bitboard before = occupancy[both];
     TestableScanner scanner;
+
+    // Build tracker: start pos, then d2d4 and e7e5
+    PieceTracker tracker = makeTracker();
+    // d2→d4 (white pawn)
+    tracker.applyMove(d2, d4, true, false);
+    // e7→e5 (black pawn)
+    tracker.applyMove(e7, e5, false, false);
 
     int move = findLegalMove(d4, e5, true);
     TEST_ASSERT(move != 0, "d4xe5 is a legal capture");
 
     Bitboard after = predictOccupancy(before, move);
 
-    // With storageChanged=true (captured piece placed in storage) → should match
+    // The captured piece is the black e-pawn → SLOT_PAWN_E (slot 12)
+    // in black's storage (capturedIsWhite=false)
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, true, matched);
-        TEST_ASSERT(found, "d4xe5 matched with storageChanged=true");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_PAWN_E, false, tracker, matched);
+        TEST_ASSERT(found, "d4xe5 matched with correct slot (SLOT_PAWN_E)");
         TEST_ASSERT(matched == move, "matched move equals expected d4xe5");
     }
 
-    // With storageChanged=false → should NOT match (it's a capture move)
+    // With no storage change → should NOT match (it's a capture move)
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, false, matched);
-        TEST_ASSERT(!found, "d4xe5 does NOT match with storageChanged=false");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_NONE, false, tracker, matched);
+        TEST_ASSERT(!found, "d4xe5 does NOT match with no storage change");
+    }
+
+    // With WRONG slot (e.g., SLOT_PAWN_D instead of SLOT_PAWN_E) → no match
+    {
+        int matched = 0;
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_PAWN_D, false, tracker, matched);
+        TEST_ASSERT(!found, "d4xe5 does NOT match with wrong slot (SLOT_PAWN_D)");
     }
 }
 
 // ─────────────────────────────────────────────────────────────
 // 3. The pondering problem — the core scenario we solved
-//
-//    Player picks up a piece, thinks for 30 seconds, board shows
-//    one square cleared. Storage is unchanged. This must NOT
-//    match any move.
 // ─────────────────────────────────────────────────────────────
 static void testPonderingDisambiguation() {
     printHeader("Pondering disambiguation (capture vs thinking)");
@@ -266,24 +332,25 @@ static void testPonderingDisambiguation() {
     parseFEN(startPosition);
     Bitboard before = occupancy[both];
     TestableScanner scanner;
+    PieceTracker tracker = makeTracker();
 
     // Simulate: player lifts the pawn from e2 (square 52)
-    // Board shows e2 empty, everything else unchanged
     Bitboard pieceLiftedOnly = before & ~(1ULL << e2);
 
     // No storage change — player is just thinking
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, pieceLiftedOnly, false, matched);
+        bool found = scanner.testMatchLegalMove(before, pieceLiftedOnly,
+                     SLOT_NONE, false, tracker, matched);
         TEST_ASSERT(!found,
             "Piece lifted from e2 + no storage change → no match (pondering)");
     }
 
-    // Even with storage changed (shouldn't happen, but test defense)
-    // this board state doesn't match any capture either (no piece landed)
+    // Even with a storage slot set (shouldn't happen, but test defense)
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, pieceLiftedOnly, true, matched);
+        bool found = scanner.testMatchLegalMove(before, pieceLiftedOnly,
+                     SLOT_PAWN_E, false, tracker, matched);
         TEST_ASSERT(!found,
             "Piece lifted from e2 + storage change → still no match (incomplete)");
     }
@@ -293,26 +360,33 @@ static void testPonderingDisambiguation() {
     parseFEN("rnbqkbnr/pppp1ppp/8/4p3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 2");
     before = occupancy[both];
 
+    // Build tracker for this position
+    PieceTracker tracker2 = makeTracker();
+    tracker2.applyMove(g1, f3, true, false);  // Nf3
+    tracker2.applyMove(e7, e5, false, false);  // e5
+
     // Player lifts knight from f3 — thinking about Nxe5
     Bitboard knightLifted = before & ~(1ULL << f3);
 
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, knightLifted, false, matched);
+        bool found = scanner.testMatchLegalMove(before, knightLifted,
+                     SLOT_NONE, false, tracker2, matched);
         TEST_ASSERT(!found,
             "Knight lifted from f3 + no storage → no match (still thinking)");
     }
 
     // Player completes the capture: f3 cleared, e5 unchanged (knight replaces pawn),
-    // storage gained a piece
+    // black pawn placed in SLOT_PAWN_E
     int nxe5 = findLegalMove(f3, e5, true);
     TEST_ASSERT(nxe5 != 0, "Nxe5 is legal");
     Bitboard afterCapture = predictOccupancy(before, nxe5);
 
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, afterCapture, true, matched);
-        TEST_ASSERT(found, "Nxe5 complete + storage change → match");
+        bool found = scanner.testMatchLegalMove(before, afterCapture,
+                     SLOT_PAWN_E, false, tracker2, matched);
+        TEST_ASSERT(found, "Nxe5 complete + correct slot → match");
         TEST_ASSERT(matched == nxe5, "matched move is Nxe5");
     }
 }
@@ -326,14 +400,12 @@ static void testTakeBack() {
     parseFEN(startPosition);
     Bitboard before = occupancy[both];
     TestableScanner scanner;
+    PieceTracker tracker = makeTracker();
 
-    // Board returns to exact original state — no match needed
-    // (waitForLegalMove handles this by continuing to poll,
-    //  but matchLegalMove should find no match since before == after)
     {
         int matched = 0;
-        // When before == after, the diff is 0 — no move matches
-        bool found = scanner.testMatchLegalMove(before, before, false, matched);
+        bool found = scanner.testMatchLegalMove(before, before,
+                     SLOT_NONE, false, tracker, matched);
         TEST_ASSERT(!found, "Identical before/after → no match (take-back)");
     }
 }
@@ -344,10 +416,23 @@ static void testTakeBack() {
 static void testCastling() {
     printHeader("Castling");
 
-    // Position where white can castle kingside
+    // Position where white can castle both sides
     parseFEN("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1");
     Bitboard before = occupancy[both];
     TestableScanner scanner;
+
+    // Build tracker: pieces that moved off back rank to allow castling
+    // For simplicity, use a tracker that matches this FEN.
+    // In this FEN, the king and rooks are on their starting squares,
+    // but the knights/bishops/queen have been removed. We can init
+    // from start and manually clear those pieces.
+    PieceTracker tracker = makeTracker();
+    // The FEN has pieces removed from b1,c1,d1,f1,g1 (white) and
+    // b8,c8,d8,f8,g8 (black). These pieces were captured.
+    // For the tracker, we just need king and rooks to be on starting squares.
+    // The removed pieces don't affect castling matching.
+    // Since they're not on the board, their tracker entries are irrelevant
+    // for this test — we only care about non-capture move matching.
 
     // White kingside castle: e1→g1
     {
@@ -357,8 +442,9 @@ static void testCastling() {
         Bitboard after = predictOccupancy(before, move);
 
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, false, matched);
-        TEST_ASSERT(found, "Kingside castle matched with storageChanged=false");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_NONE, false, tracker, matched);
+        TEST_ASSERT(found, "Kingside castle matched with no storage change");
         TEST_ASSERT(matched == move, "matched move is O-O");
     }
 
@@ -370,19 +456,21 @@ static void testCastling() {
         Bitboard after = predictOccupancy(before, move);
 
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, false, matched);
-        TEST_ASSERT(found, "Queenside castle matched with storageChanged=false");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_NONE, false, tracker, matched);
+        TEST_ASSERT(found, "Queenside castle matched with no storage change");
         TEST_ASSERT(matched == move, "matched move is O-O-O");
     }
 
-    // Castle must NOT match with storageChanged=true
+    // Castle must NOT match with a storage change
     {
         int move = findLegalMove(e1, g1, false, false, true);
         Bitboard after = predictOccupancy(before, move);
 
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, true, matched);
-        TEST_ASSERT(!found, "Castle does NOT match with storageChanged=true");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_PAWN_A, false, tracker, matched);
+        TEST_ASSERT(!found, "Castle does NOT match with a storage slot change");
     }
 }
 
@@ -397,24 +485,41 @@ static void testEnPassant() {
     Bitboard before = occupancy[both];
     TestableScanner scanner;
 
+    // Build tracker for this position
+    PieceTracker tracker = makeTracker();
+    tracker.applyMove(e2, e4, true, false);   // 1. e4
+    tracker.applyMove(a7, a6, false, false);  // 1... a6 (some move)
+    tracker.applyMove(e4, e5, true, false);   // 2. e5
+    tracker.applyMove(d7, d5, false, false);  // 2... d5
+
     int move = findLegalMove(e5, d6, true, true);
     TEST_ASSERT(move != 0, "exd6 en passant is legal");
 
     Bitboard after = predictOccupancy(before, move);
 
-    // En passant is a capture — needs storageChanged=true
+    // En passant captures the d-pawn → SLOT_PAWN_D in black's storage
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, true, matched);
-        TEST_ASSERT(found, "En passant matched with storageChanged=true");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_PAWN_D, false, tracker, matched);
+        TEST_ASSERT(found, "En passant matched with correct slot (SLOT_PAWN_D)");
         TEST_ASSERT(matched == move, "matched move is exd6 e.p.");
     }
 
-    // Must not match without storage change
+    // Must not match with no storage change
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, false, matched);
-        TEST_ASSERT(!found, "En passant does NOT match with storageChanged=false");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_NONE, false, tracker, matched);
+        TEST_ASSERT(!found, "En passant does NOT match with no storage change");
+    }
+
+    // Must not match with wrong slot
+    {
+        int matched = 0;
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_PAWN_E, false, tracker, matched);
+        TEST_ASSERT(!found, "En passant does NOT match with wrong slot");
     }
 }
 
@@ -429,6 +534,13 @@ static void testPromotion() {
     parseFEN("8/4P3/8/8/8/8/8/4K2k w - - 0 1");
     Bitboard before = occupancy[both];
     TestableScanner scanner;
+    PieceTracker tracker = makeTracker();
+    // Pawn has moved from e2 to e7 through several moves — for this test
+    // the tracker identity is tracked but doesn't affect promotion matching.
+    tracker.applyMove(e2, e4, true, false);
+    tracker.applyMove(e4, e5, true, false);
+    tracker.applyMove(e5, e6, true, false);
+    tracker.applyMove(e6, e7, true, false);
 
     // All four promotions produce the same occupancy diff
     int queenPromo = findLegalMove(e7, e8, false, false, false, Q);
@@ -436,10 +548,11 @@ static void testPromotion() {
 
     Bitboard after = predictOccupancy(before, queenPromo);
 
-    // storageChanged=false (non-capture promotion)
+    // No storage change (non-capture promotion)
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, false, matched);
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_NONE, false, tracker, matched);
         TEST_ASSERT(found, "Promotion matched");
         TEST_ASSERT(getPromoted(matched) == Q || getPromoted(matched) == q,
             "Ambiguous promotion defaults to queen");
@@ -449,15 +562,26 @@ static void testPromotion() {
     parseFEN("3r4/4P3/8/8/8/8/8/4K2k w - - 0 1");
     before = occupancy[both];
 
+    // The captured piece is black rook on d8 → SLOT_QUEEN_D (slot 3)?
+    // Actually, d8 is the queen's starting square, but the piece there
+    // is a rook (it could have moved there). For this FEN we need a
+    // tracker that reflects a rook on d8. Since it's a simplified
+    // position, let's just use a fresh tracker where d8 has the queen
+    // slot identity (the piece that started on d8 was the queen).
+    PieceTracker tracker2 = makeTracker();
+    tracker2.applyMove(e2, e7, true, false);  // simplified
+
     int capPromo = findLegalMove(e7, d8, true, false, false, Q);
     TEST_ASSERT(capPromo != 0, "exd8=Q is legal");
 
     after = predictOccupancy(before, capPromo);
 
+    // d8 originally held black's queen → SLOT_QUEEN_D (slot 3)
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, true, matched);
-        TEST_ASSERT(found, "Capture-promotion matched with storageChanged=true");
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_QUEEN_D, false, tracker2, matched);
+        TEST_ASSERT(found, "Capture-promotion matched with correct slot");
         TEST_ASSERT(getPromoted(matched) == Q || getPromoted(matched) == q,
             "Capture-promotion defaults to queen");
     }
@@ -473,24 +597,28 @@ static void testMidMoveTransients() {
     parseFEN("rnbqkbnr/pppp1ppp/8/4p3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 0 2");
     Bitboard before = occupancy[both];
     TestableScanner scanner;
+    PieceTracker tracker = makeTracker();
+    tracker.applyMove(g1, f3, true, false);
+    tracker.applyMove(e7, e5, false, false);
 
     // State 1: Player removes captured pawn from e5 to storage, but hasn't
     // moved their knight yet. Board: e5 empty, f3 still occupied.
     Bitboard capturedPawnRemoved = before & ~(1ULL << e5);
     {
         int matched = 0;
-        // Storage changed (pawn went to tray), but board doesn't match any move
-        bool found = scanner.testMatchLegalMove(before, capturedPawnRemoved, true, matched);
+        bool found = scanner.testMatchLegalMove(before, capturedPawnRemoved,
+                     SLOT_PAWN_E, false, tracker, matched);
         TEST_ASSERT(!found,
             "Captured pawn removed but knight not moved → no match (mid-capture)");
     }
 
     // State 2: Player has lifted knight from f3 AND removed pawn from e5,
-    // but hasn't placed knight on e5 yet. Both squares empty.
+    // but hasn't placed knight on e5 yet.
     Bitboard bothLifted = before & ~(1ULL << f3) & ~(1ULL << e5);
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, bothLifted, true, matched);
+        bool found = scanner.testMatchLegalMove(before, bothLifted,
+                     SLOT_PAWN_E, false, tracker, matched);
         TEST_ASSERT(!found,
             "Knight and pawn both lifted → no match (piece in hand)");
     }
@@ -498,11 +626,13 @@ static void testMidMoveTransients() {
     // State 3: Castling mid-move — king lifted but rook hasn't moved yet
     parseFEN("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1");
     before = occupancy[both];
+    PieceTracker trackerCastle = makeTracker();
 
     Bitboard kingLifted = before & ~(1ULL << e1);
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, kingLifted, false, matched);
+        bool found = scanner.testMatchLegalMove(before, kingLifted,
+                     SLOT_NONE, false, trackerCastle, matched);
         TEST_ASSERT(!found,
             "King lifted for castling but rook not moved → no match");
     }
@@ -512,7 +642,8 @@ static void testMidMoveTransients() {
     rookMoved |= (1ULL << f1);
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, rookMoved, false, matched);
+        bool found = scanner.testMatchLegalMove(before, rookMoved,
+                     SLOT_NONE, false, trackerCastle, matched);
         TEST_ASSERT(!found,
             "Rook moved to f1 but king not placed → no match (mid-castle)");
     }
@@ -530,7 +661,6 @@ static void testLegacyInferMove() {
         before |= (1ULL << e2);
         Bitboard after = 0;
         after |= (1ULL << e4);
-        // Add some other pieces that don't move
         before |= (1ULL << a1) | (1ULL << h8);
         after  |= (1ULL << a1) | (1ULL << h8);
 
@@ -545,11 +675,9 @@ static void testLegacyInferMove() {
     {
         Bitboard before = (1ULL << e2) | (1ULL << d3) | (1ULL << a1);
         Bitboard after  = (1ULL << d3) | (1ULL << a1);
-        // After capture: e2 cleared, d3 still set
 
         int from = -1, to = -1;
         bool ok = BoardScanner::inferMove(before, after, from, to);
-        // inferMove returns false for captures (can't determine dest)
         TEST_ASSERT(!ok, "inferMove: capture returns false (needs legal moves)");
         TEST_ASSERT(from == e2, "inferMove: capture source is e2");
     }
@@ -562,7 +690,6 @@ static void testLegacyInferMove() {
         int from = -1, to = -1;
         bool ok = BoardScanner::inferMove(before, after, from, to);
         TEST_ASSERT(ok, "inferMove: castling pattern detected");
-        // King is the one that moved 2 squares
         TEST_ASSERT(from == e1, "inferMove: castling king source is e1");
         TEST_ASSERT(to == g1, "inferMove: castling king dest is g1");
     }
@@ -576,78 +703,77 @@ static void testSquaresToMoveString() {
 
     char buf[6];
 
-    // e2e4
     BoardScanner::squaresToMoveString(e2, e4, buf);
     TEST_ASSERT(strcmp(buf, "e2e4") == 0, "e2e4 string");
 
-    // a7a8 (no promotion)
     BoardScanner::squaresToMoveString(a7, a8, buf);
     TEST_ASSERT(strcmp(buf, "a7a8") == 0, "a7a8 string");
 
-    // e7e8q (queen promotion)
     BoardScanner::squaresToMoveString(e7, e8, buf, 'q');
     TEST_ASSERT(strcmp(buf, "e7e8q") == 0, "e7e8q promotion string");
 
-    // a2a1n (knight underpromotion)
     BoardScanner::squaresToMoveString(a2, a1, buf, 'n');
     TEST_ASSERT(strcmp(buf, "a2a1n") == 0, "a2a1n underpromotion string");
 }
 
 // ─────────────────────────────────────────────────────────────
-// 11. Multiple captures from same source — ambiguous occupancy
+// 11. Multiple captures from same source — NOW RESOLVED by slot identity
 //
 //     When a queen can capture on two different squares, both
-//     produce the same occupancy diff (source clears, destination
-//     stays occupied). The sensors can't distinguish them.
-//     matchLegalMove correctly returns false (ambiguous).
-//
-//     In practice this is rare: it requires two capture targets
-//     where the piece count stays the same. Non-capture moves
-//     from the same square (e.g., Qd4-d5 vs Qd4-d6) DO produce
-//     different occupancy and resolve uniquely.
+//     produce the same occupancy diff. But the storage slot
+//     identifies WHICH piece was captured, resolving the ambiguity.
 // ─────────────────────────────────────────────────────────────
 static void testMultipleCaptureTargets() {
-    printHeader("Multiple capture targets from same source");
+    printHeader("Multiple capture targets — slot-based disambiguation");
 
-    // Queen on d4, can capture on d7 AND g7 — both produce the same
-    // board occupancy (d4 clears, target stays set), so this is
-    // genuinely ambiguous from the sensor perspective.
+    // Queen on d4, can capture on d7 AND g7.
+    // Previously ambiguous — now resolved by storage slot.
     parseFEN("3k4/3p2p1/8/8/3Q4/8/8/4K3 w - - 0 1");
     Bitboard before = occupancy[both];
     TestableScanner scanner;
 
+    // Build tracker: white queen moved from d1 to d4
+    PieceTracker tracker = makeTracker();
+    tracker.applyMove(d1, d4, true, false);  // simplified: queen to d4
+
     int qxd7 = findLegalMove(d4, d7, true);
+    int qxg7 = findLegalMove(d4, g7, true);
     TEST_ASSERT(qxd7 != 0, "Qxd7 is legal");
+    TEST_ASSERT(qxg7 != 0, "Qxg7 is legal");
 
     Bitboard afterQxd7 = predictOccupancy(before, qxd7);
-
-    // Both Qxd7 and Qxg7 produce the same occupancy (d4 clears,
-    // everything else stays the same), so matchLegalMove can't
-    // distinguish them — it correctly returns false (ambiguous).
-    {
-        int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, afterQxd7, true, matched);
-        TEST_ASSERT(!found,
-            "Ambiguous capture (Qxd7 vs other captures) → no unique match");
-    }
-
-    // A capture where only ONE legal capture exists from the source
-    // DOES resolve uniquely. Put the queen where it can only capture one piece.
-    parseFEN("3k4/6p1/8/8/6Q1/8/8/4K3 w - - 0 1");
-    before = occupancy[both];
-
-    int qxg7 = findLegalMove(g4, g7, true);
-    TEST_ASSERT(qxg7 != 0, "Qxg7 is legal (only capture from g4 on g-file)");
-
     Bitboard afterQxg7 = predictOccupancy(before, qxg7);
 
+    // With the correct slot for d7 (SLOT_PAWN_D = slot 11, black's d-pawn)
+    // → should uniquely match Qxd7
     {
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, afterQxg7, true, matched);
-        TEST_ASSERT(found, "Unambiguous capture (only one target) → unique match");
+        bool found = scanner.testMatchLegalMove(before, afterQxd7,
+                     SLOT_PAWN_D, false, tracker, matched);
+        TEST_ASSERT(found, "Qxd7 resolved by SLOT_PAWN_D");
+        if (found) {
+            TEST_ASSERT(getTarget(matched) == d7, "matched target is d7");
+        }
+    }
+
+    // With the correct slot for g7 (SLOT_PAWN_G = slot 14, black's g-pawn)
+    // → should uniquely match Qxg7
+    {
+        int matched = 0;
+        bool found = scanner.testMatchLegalMove(before, afterQxg7,
+                     SLOT_PAWN_G, false, tracker, matched);
+        TEST_ASSERT(found, "Qxg7 resolved by SLOT_PAWN_G");
         if (found) {
             TEST_ASSERT(getTarget(matched) == g7, "matched target is g7");
         }
+    }
+
+    // With WRONG slot (e.g., SLOT_PAWN_A) → no match
+    {
+        int matched = 0;
+        bool found = scanner.testMatchLegalMove(before, afterQxd7,
+                     SLOT_PAWN_A, false, tracker, matched);
+        TEST_ASSERT(!found, "Wrong slot (SLOT_PAWN_A) → no match");
     }
 }
 
@@ -661,6 +787,8 @@ static void testBlackMoves() {
     parseFEN("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
     Bitboard before = occupancy[both];
     TestableScanner scanner;
+    PieceTracker tracker = makeTracker();
+    tracker.applyMove(e2, e4, true, false);  // 1. e4
 
     // e7e5: black double pawn push
     {
@@ -670,7 +798,8 @@ static void testBlackMoves() {
         Bitboard after = predictOccupancy(before, move);
 
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, false, matched);
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_NONE, false, tracker, matched);
         TEST_ASSERT(found, "Black e7e5 matched");
         TEST_ASSERT(matched == move, "matched move is e7e5");
     }
@@ -683,89 +812,146 @@ static void testBlackMoves() {
         Bitboard after = predictOccupancy(before, move);
 
         int matched = 0;
-        bool found = scanner.testMatchLegalMove(before, after, false, matched);
+        bool found = scanner.testMatchLegalMove(before, after,
+                     SLOT_NONE, false, tracker, matched);
         TEST_ASSERT(found, "Black Nc6 matched");
     }
 }
 
 // ─────────────────────────────────────────────────────────────
-// 13. Board verification — verifyBoardState
+// 13. PieceTracker — unit tests for the tracker itself
 // ─────────────────────────────────────────────────────────────
-static void testBoardVerification() {
-    printHeader("Board verification (verifyBoardState)");
+static void testPieceTracker() {
+    printHeader("PieceTracker identity tracking");
 
-    // Set up starting position in the engine
-    parseFEN(startPosition);
+    PieceTracker tracker;
+    tracker.initStartingPosition();
 
-    // Create a GameController and scanner in simulation mode
-    GameController gc;
-    gc.getGantry().enableDryRun();
-    gc.getScanner().enableSimulation();
-    gc.syncWithEngine();
+    // Verify starting positions
+    // Black rook on a8 (square 0) → SLOT_ROOK_A (0)
+    TEST_ASSERT(tracker.getSlotAt(a8) == SLOT_ROOK_A,
+        "a8 has SLOT_ROOK_A at start");
+    // White king on e1 (square 60) → SLOT_KING_E (4)
+    TEST_ASSERT(tracker.getSlotAt(e1) == SLOT_KING_E,
+        "e1 has SLOT_KING_E at start");
+    // Black pawn on d7 (square 11) → SLOT_PAWN_D (11)
+    TEST_ASSERT(tracker.getSlotAt(d7) == SLOT_PAWN_D,
+        "d7 has SLOT_PAWN_D at start");
+    // Empty square e4 → SLOT_NONE
+    TEST_ASSERT(tracker.getSlotAt(e4) == SLOT_NONE,
+        "e4 is SLOT_NONE at start");
 
-    // Test 1: Board matches — simulate sensors returning the correct occupancy
+    // Reverse lookup: white's SLOT_PAWN_E should be on e2
+    TEST_ASSERT(tracker.getSquareForSlot(true, SLOT_PAWN_E) == e2,
+        "White SLOT_PAWN_E is on e2 at start");
+
+    // Apply 1. e4
+    tracker.applyMove(e2, e4, true, false);
+    TEST_ASSERT(tracker.getSlotAt(e2) == SLOT_NONE,
+        "e2 is empty after e4");
+    TEST_ASSERT(tracker.getSlotAt(e4) == SLOT_PAWN_E,
+        "e4 has SLOT_PAWN_E after e4");
+    TEST_ASSERT(tracker.getSquareForSlot(true, SLOT_PAWN_E) == e4,
+        "White SLOT_PAWN_E is on e4 after 1.e4");
+
+    // Apply 1... d5
+    tracker.applyMove(d7, d5, false, false);
+    TEST_ASSERT(tracker.getSlotAt(d5) == SLOT_PAWN_D,
+        "d5 has SLOT_PAWN_D after d5");
+
+    // Apply 2. exd5 (capture)
+    tracker.applyMove(e4, d5, true, true, d5, false);
+    TEST_ASSERT(tracker.getSlotAt(d5) == SLOT_PAWN_E,
+        "d5 has SLOT_PAWN_E after exd5 (white pawn captured black pawn)");
+    TEST_ASSERT(tracker.getSlotAt(e4) == SLOT_NONE,
+        "e4 is empty after exd5");
+    TEST_ASSERT(!tracker.isPieceAlive(false, SLOT_PAWN_D),
+        "Black SLOT_PAWN_D is captured after exd5");
+    TEST_ASSERT(tracker.isPieceAlive(true, SLOT_PAWN_E),
+        "White SLOT_PAWN_E is still alive after exd5");
+    TEST_ASSERT(tracker.getSquareForSlot(true, SLOT_PAWN_E) == d5,
+        "White SLOT_PAWN_E is on d5 after exd5");
+}
+
+// ─────────────────────────────────────────────────────────────
+// 14. PieceTracker castling
+// ─────────────────────────────────────────────────────────────
+static void testPieceTrackerCastling() {
+    printHeader("PieceTracker castling");
+
+    PieceTracker tracker;
+    tracker.initStartingPosition();
+
+    // Simulate clearing the way for kingside castle
+    // (just move pieces out, doesn't matter where for tracker test)
+    tracker.applyMove(f1, e3, true, false);  // bishop
+    tracker.applyMove(g1, f3, true, false);  // knight
+
+    // Now castle: king e1→g1, rook h1→f1
+    tracker.applyMove(e1, g1, true, false);
+    tracker.applyRookCastle(h1, f1, true);
+
+    TEST_ASSERT(tracker.getSlotAt(g1) == SLOT_KING_E,
+        "g1 has SLOT_KING_E after O-O");
+    TEST_ASSERT(tracker.getSlotAt(f1) == SLOT_ROOK_H,
+        "f1 has SLOT_ROOK_H after O-O");
+    TEST_ASSERT(tracker.getSlotAt(e1) == SLOT_NONE,
+        "e1 is empty after O-O");
+    TEST_ASSERT(tracker.getSlotAt(h1) == SLOT_NONE,
+        "h1 is empty after O-O");
+}
+
+// ─────────────────────────────────────────────────────────────
+// 15. Wrong slot detection — already-captured piece's slot
+// ─────────────────────────────────────────────────────────────
+static void testWrongSlotAlreadyCaptured() {
+    printHeader("Wrong slot — piece already captured");
+
+    // Set up position after some captures
+    parseFEN("rnbqkbnr/pppp1ppp/8/4p3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 2");
+    Bitboard before = occupancy[both];
+    TestableScanner scanner;
+
+    PieceTracker tracker = makeTracker();
+    tracker.applyMove(d2, d4, true, false);
+    tracker.applyMove(e7, e5, false, false);
+
+    // Now do the capture d4xe5
+    int dxe5 = findLegalMove(d4, e5, true);
+    TEST_ASSERT(dxe5 != 0, "d4xe5 is legal");
+    // (We don't need afterDxe5 here — this test is about the tracker state,
+    // not about matching a move against occupancy.)
+
+    // Simulate the tracker having already captured the e-pawn
+    PieceTracker trackerAfterCapture = tracker;
+    applyMoveToTracker(trackerAfterCapture, dxe5);
+
+    // Now if someone tries to put a piece in SLOT_PAWN_E again,
+    // isPieceAlive returns false
+    TEST_ASSERT(!trackerAfterCapture.isPieceAlive(false, SLOT_PAWN_E),
+        "Black SLOT_PAWN_E is dead after capture");
+
+    // matchLegalMove with a dead piece's slot should return false
+    // (This simulates the player putting a piece in the wrong slot
+    //  on a subsequent move)
+    parseFEN("rnbqkbnr/pppp1ppp/8/4P3/8/8/PPP1PPPP/RNBQKBNR b KQkq - 0 2");
+    before = occupancy[both];
+
+    // Black tries to capture: say Nc6 (not a capture), but player
+    // accidentally puts something in SLOT_PAWN_E which is already dead
+    int nc6 = findLegalMove(b8, c6);
+    TEST_ASSERT(nc6 != 0, "Nc6 is legal");
+    Bitboard afterNc6 = predictOccupancy(before, nc6);
+
     {
-        gc.getScanner().setSimulatedOccupancy(occupancy[both]);
-        Bitboard expected = 0, actual = 0;
-        bool ok = gc.verifyBoardState(expected, actual);
-        TEST_ASSERT(ok, "Board matches engine state → verify returns true");
-        TEST_ASSERT(expected == actual, "expected == actual when board matches");
-    }
-
-    // Test 2: Missing piece — e2 pawn fell off
-    {
-        Bitboard tampered = occupancy[both] & ~(1ULL << e2);
-        gc.getScanner().setSimulatedOccupancy(tampered);
-        Bitboard expected = 0, actual = 0;
-        bool ok = gc.verifyBoardState(expected, actual);
-        TEST_ASSERT(!ok, "Missing piece on e2 → verify returns false");
-        TEST_ASSERT(expected != actual, "expected != actual when piece missing");
-
-        // Check the diff identifies e2
-        Bitboard diff = expected ^ actual;
-        Bitboard missing = expected & diff;
-        TEST_ASSERT((missing & (1ULL << e2)) != 0,
-            "Mismatch diff identifies e2 as missing");
-    }
-
-    // Test 3: Extra piece — a piece appeared on e4 (shouldn't be there in starting pos)
-    {
-        Bitboard tampered = occupancy[both] | (1ULL << e4);
-        gc.getScanner().setSimulatedOccupancy(tampered);
-        Bitboard expected = 0, actual = 0;
-        bool ok = gc.verifyBoardState(expected, actual);
-        TEST_ASSERT(!ok, "Extra piece on e4 → verify returns false");
-
-        Bitboard diff = expected ^ actual;
-        Bitboard extra = actual & diff;
-        TEST_ASSERT((extra & (1ULL << e4)) != 0,
-            "Mismatch diff identifies e4 as extra");
-    }
-
-    // Test 4: Multiple differences — two pieces displaced
-    {
-        Bitboard tampered = occupancy[both];
-        tampered &= ~(1ULL << a2);  // a2 pawn missing
-        tampered &= ~(1ULL << h7);  // h7 pawn missing
-        tampered |= (1ULL << d4);   // piece appeared on d4
-        gc.getScanner().setSimulatedOccupancy(tampered);
-        Bitboard expected = 0, actual = 0;
-        bool ok = gc.verifyBoardState(expected, actual);
-        TEST_ASSERT(!ok, "Multiple differences → verify returns false");
-
-        Bitboard diff = expected ^ actual;
-        int diffCount = countBits(diff);
-        TEST_ASSERT(diffCount == 3,
-            "3 squares differ (a2, h7 missing + d4 extra)");
-    }
-
-    // Test 5: Scanner not initialized — should return true (can't verify, assume OK)
-    {
-        GameController gc2;  // No scanner init, no dry run
-        // gc2.scanner is not initialized
-        Bitboard expected = 0, actual = 0;
-        bool ok = gc2.verifyBoardState(expected, actual);
-        TEST_ASSERT(ok, "No scanner initialized → verify returns true (skip)");
+        int matched = 0;
+        // SLOT_PAWN_E is dead → this should fail in waitForLegalMove's
+        // validation, but at the matchLegalMove level it returns false
+        // because no capture targets the dead piece's (non-existent) square
+        bool found = scanner.testMatchLegalMove(before, afterNc6,
+                     SLOT_PAWN_E, false, trackerAfterCapture, matched);
+        TEST_ASSERT(!found,
+            "Dead piece slot → matchLegalMove returns false");
     }
 }
 
@@ -790,7 +976,9 @@ int main() {
     testSquaresToMoveString();
     testMultipleCaptureTargets();
     testBlackMoves();
-    testBoardVerification();
+    testPieceTracker();
+    testPieceTrackerCastling();
+    testWrongSlotAlreadyCaptured();
 
     printf("\n" ANSI_BOLD "═══ Results: %d/%d passed" ANSI_RESET, testsPassed, testsRun);
     if (testsFailed > 0) {

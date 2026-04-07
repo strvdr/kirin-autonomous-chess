@@ -96,20 +96,6 @@ static long perft(int depth) {
     return total;
 }
 
-// Count legal moves in the current position (perft(1) without the recursion).
-static int countLegalMoves() {
-    moves ml[1];
-    generateMoves(ml);
-    int count = 0;
-    for (int i = 0; i < ml->count; i++) {
-        copyBoard();
-        ply = 0;
-        if (makeMove(ml->moves[i], allMoves)) count++;
-        restoreBoard();
-    }
-    return count;
-}
-
 // Returns true iff the move encoded as UCI string "e2e4" / "e7e8q" is legal
 // in the current position.
 static bool moveIsLegal(const char *s) {

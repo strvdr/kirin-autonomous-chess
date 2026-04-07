@@ -4,7 +4,7 @@
       ,  ,
       \\ \\                 
       ) \\ \\    _p_        
-       )^\))\))  /  *\      KIRIN CHESS ENGINE v0.3.1
+       )^\))\))  /  *\      KIRIN CHESS ENGINE v0.3
         \_|| || / /^`-'     
  __       -\ \\--/ /          Author:      Strydr Silverberg
 <'  \\___/   ___. )'                        Colorado School of Mines, Class of 2027
@@ -20,11 +20,16 @@
 
 ## Overview
 
+<<<<<<< HEAD
 Kirin is an autonomous chess system that delivers a complete single-player experience by pairing a custom chess engine with a physically-actuated board. A two-axis gantry equipped with an electromagnet moves pieces across the board independently, eliminating the need for a human opponent while preserving the tactile satisfaction of over-the-board play. This README is intended to serve as a general overview, but comprehensive documentation for all software can be found in this repository under /docs.
+=======
+Kirin is an autonomous chess system that delivers a complete single-player experience by pairing a custom chess engine with a physically-actuated board. A two-axis gantry equipped with an electromagnet moves pieces across the board independently, while hall effect sensors detect the human player's moves — eliminating the need for a human opponent while preserving the tactile satisfaction of over-the-board play.
+>>>>>>> b79318b6a99573981b8e596bc012288f14f80021
 
-The system is built around three tightly-coupled layers:
+The system is built around four tightly-coupled layers:
 
 - **Chess Engine** — Bitboard-based move generation, Zobrist hashing, and alpha-beta search with iterative deepening
+- **Board Scanner** — 96 hall effect sensors read via multiplexed GPIO to detect piece presence on the board and in storage zones
 - **Board Interpreter** — Translates engine moves into physical paths, handling blocker detection, piece parking, and A\* pathfinding
 - **Gantry Controller** — Generates and dispatches G-code to a GRBL-based motion controller via serial
 
@@ -47,7 +52,7 @@ The system is built around three tightly-coupled layers:
 |<--->|<------------------->|<--->|
    ^                            ^
    |                            |
-Black captures              White captures
+Black storage               White storage
 X = 1.5" (center)          X = 20.5" (center)
 Y = 4" to 18"              Y = 4" to 18"
 ```
@@ -57,10 +62,28 @@ Y = 4" to 18"              Y = 4" to 18"
 | Rail travel | 22 inches |
 | Board size | 16 × 16 inches |
 | Square size | 2 × 2 inches |
-| Capture zones | 3-inch margins, left (black) and right (white) |
+| Storage zones | 3-inch margins, left (black) and right (white) |
 | Motion controller | GRBL 1.1 |
 | Serial connection | 115200 baud, 8N1 |
 | Piece actuation | Electromagnet (M3/M5 spindle commands) |
+| Piece detection | 96× A3144 hall effect sensors (active-low, 10K pull-up) |
+| Sensor muxing | 6× CD74HC4067 16:1 multiplexers, 4 shared select lines |
+| Sensor controller | Raspberry Pi GPIO (libgpiod) |
+
+### Sensor Layout
+
+The 96 hall effect sensors are organized across six multiplexers sharing four select lines (S0–S3):
+
+| Mux | Coverage | Sensors |
+|---|---|---|
+| 0 | Board ranks 8–7 (a8–h7) | 16 |
+| 1 | Board ranks 6–5 (a6–h5) | 16 |
+| 2 | Board ranks 4–3 (a4–h3) | 16 |
+| 3 | Board ranks 2–1 (a2–h1) | 16 |
+| 4 | Black storage zone | 16 |
+| 5 | White storage zone | 16 |
+
+Each storage mux has 16 channels: channels 0–7 for back-rank piece slots (rook, knight, bishop, queen, king, bishop, knight, rook) and channels 8–15 for pawn slots (files a–h).
 
 ---
 
@@ -69,13 +92,15 @@ Y = 4" to 18"              Y = 4" to 18"
 ```
 main.cpp
   ├── UCI Mode           — Standard UCI protocol for chess GUIs
-  ├── Physical Mode      — Live game with gantry hardware
+  ├── Physical Mode      — Live game with gantry + sensor hardware
   ├── Simulation Mode    — Interactive, no hardware (manual UCI moves)
   └── Dry Run Mode       — Engine-vs-engine, full G-code audit, no hardware
 
 GameController           — Orchestrates engine ↔ physical board
   ├── PhysicalBoard      — Bitboard-based physical state tracker
-  └── GrblController     — Serial comms, G-code dispatch, capture tracking
+  ├── GrblController     — Serial comms, G-code dispatch, capture tracking
+  ├── BoardScanner       — Hall effect sensor polling, move detection
+  └── PieceTracker       — Maps individual piece identity to board squares
 
 BoardInterpreter         — Path planning
   ├── Piece-specific paths (sliding, knight L-paths, etc.)
@@ -92,6 +117,8 @@ Engine
 
 ### Key Data Flow
 
+**Engine → Gantry (engine moves a piece):**
+
 ```
 searchPosition(depth)
     → bestMove (encoded int)
@@ -103,6 +130,21 @@ searchPosition(depth)
                             → std::vector<std::string> G-code commands
                                 → GrblController::sendCommands()
 ```
+
+**Sensors → Engine (human moves a piece):**
+
+```
+BoardScanner::waitForLegalMove()
+    → poll sensors until board/storage state changes
+        → debounce, diff against baseline
+            → matchLegalMove() (disambiguate via PieceTracker + storage slot)
+                → matched engine move
+                    → GameController advances engine state
+```
+
+### Piece Identity Tracking
+
+The engine only knows piece types on squares ("there's a black knight on d5"), not individual piece identity ("the b8-knight is on d5"). But the physical board has labeled storage slots, so when a capture occurs the system needs to know *which* piece was taken to route it to the correct slot. The `PieceTracker` maintains a 64-entry map from board squares to starting-slot identifiers, updated on every move.
 
 ---
 
@@ -122,7 +164,7 @@ At levels 0 and 1, after the search completes, every legal root move is re-score
 
 ## Building
 
-The project uses CMake (3.10+) with a C++17 toolchain. Serial hardware support is conditionally compiled via the `HAS_SERIAL` preprocessor flag (set automatically on Linux).
+The project uses CMake (3.10+) with a C++17 toolchain. Serial hardware support is conditionally compiled via the `HAS_SERIAL` preprocessor flag (set automatically on Linux). GPIO sensor support requires `libgpiod` and the `HAS_GPIOD` flag.
 
 ```
 kirin/
@@ -136,6 +178,7 @@ kirin/
     ├── board_interpreter_test.cpp
     ├── game_controller_test.cpp
     ├── engine_test.cpp
+    ├── board_scanner_test.cpp
     ├── generate_test_report.py
     └── TEST_RESULTS.md
 ```
@@ -150,6 +193,9 @@ cmake ..
 
 # Configure Debug build
 cmake .. -DCMAKE_BUILD_TYPE=Debug
+
+# Enable GPIO sensor support (Raspberry Pi only)
+cmake .. -DHAS_GPIOD=ON
 
 # Build
 cmake --build .
@@ -167,7 +213,7 @@ The CMake build produces three targets:
 |---|---|
 | `kirin` | Main executable |
 | `kirin_engine` | Static library — chess engine core |
-| `kirin_hardware` | Static library — board interpreter + gantry controller (links engine) |
+| `kirin_hardware` | Static library — board interpreter, scanner, gantry controller (links engine) |
 
 Release builds are compiled with `-O3 -march=native -flto`. Debug builds use `-g -O0 -DDEBUG`.
 
@@ -175,14 +221,15 @@ Release builds are compiled with `-O3 -march=native -flto`. Debug builds use `-g
 
 ## Testing
 
-The project has a comprehensive test suite covering all three layers. Tests are run via CTest and results are automatically published to [`tests/TEST_RESULTS.md`](tests/TEST_RESULTS.md) on every push to `main` via GitHub Actions.
+The project has a comprehensive test suite covering all layers. Tests are run via CTest and results are automatically published to [`tests/TEST_RESULTS.md`](tests/TEST_RESULTS.md) on every push to `main` via GitHub Actions.
 
-| Suite | Coverage | Tests |
+| Suite | Coverage | Assertions |
 |---|---|---|
-| `captured_piece_test` | Move encoding — captured-piece bit-field, flag isolation, bit-position overlap | 10 |
-| `board_interpreter_test` | Path planning, blocker relocation/restoration, knight routing, A\* pathfinding, nested blockers, edge cases | 62 |
-| `game_controller_test` | Coordinate conversion, piece-type mapping, PhysicalBoard sync, `parseBoardMove`, `isGameOver`, hardware-gated functions | 235 |
-| `engine_test` | Perft node counts (4 positions × up to depth 4), evaluation sanity, tactical position structure, skill-level globals, repetition detection | 40+ |
+| `captured_piece_test` | Move encoding — captured-piece bit-field, flag isolation, bit-position overlap | 11 |
+| `board_interpreter_test` | Path planning, blocker relocation/restoration, knight routing, A\* pathfinding, nested blockers, edge cases | 43 |
+| `game_controller_test` | Coordinate conversion, piece-type mapping, PhysicalBoard sync, `parseBoardMove`, `isGameOver`, special moves, PieceTracker integration | 114 |
+| `engine_test` | Perft node counts (4 positions × up to depth 4), evaluation sanity, tactical position structure, skill-level globals, repetition detection | 46 |
+| `board_scanner_test` | Sensor move detection, capture disambiguation via storage slots, castling/en passant detection, PieceTracker state tracking, simulation mode | 88 |
 
 ### Test design notes
 
@@ -191,6 +238,8 @@ The engine test suite avoids calling `searchPosition()` directly. In a CTest sub
 - **Perft** — recursive legal-node counts matched against published ground truth (chessprogramming.org) for four standard positions including Kiwipete
 - **`evaluate()`** — direct calls to check sign, symmetry, and material ordering
 - **`generateMoves()` / `makeMove()`** — used to verify tactical positions structurally: checkmate and stalemate are confirmed by `perft(1) == 0` combined with `isAttacked()`, specific moves are confirmed present or absent in the legal move list
+
+The board scanner tests run entirely in simulation mode and do not require GPIO hardware.
 
 ---
 
@@ -221,7 +270,12 @@ Exposes the engine over standard UCI for use with chess GUIs (Arena, Cute Chess,
 
 ### Physical Mode
 
-Connects to the gantry over serial, homes the axes, and enters the main game loop. The engine plays one side; the human enters moves in UCI notation.
+Connects to the gantry over serial, initializes the board scanner, homes the axes, and enters an interactive command loop. Supports two play styles:
+
+- **`play [white|black]`** — Sensor-based game. The human moves pieces physically on the board; the system detects moves via hall effect sensors and responds automatically via the gantry. This is the primary play experience.
+- **`newgame [white|black]`** — Manual-entry fallback. The human types moves in UCI notation. Useful when sensors are unavailable or for debugging.
+
+Additional commands include `scan` (display raw sensor readings), `diag` (full sensor diagnostic), `board`, `fen`, `home`, and `test`.
 
 ```bash
 ./kirin --physical /dev/ttyUSB0
@@ -263,7 +317,7 @@ Example dry-run output:
 
 ## Module Reference
 
-**`src/main.cpp`** — Entry point, run-mode dispatch
+**`src/main.cpp`** — Entry point, run-mode dispatch, sensor-based game loop
 
 **`src/engine/`**
 
@@ -278,16 +332,18 @@ Example dry-run output:
 | `zobrist.h/.cpp` | Zobrist hashing for transposition table |
 | `uci.h/.cpp` | UCI protocol handler |
 | `types.h/.cpp` | Shared type definitions |
-| `utils.h/.cpp` | Miscellaneous helpers |
+| `utils.h/.cpp` | Time control, random numbers, I/O utilities |
 | `engine.h` | Umbrella include for engine internals |
 
 **`src/hardware/`**
 
 | File | Responsibility |
 |---|---|
-| `game_controller.h/.cpp` | Engine ↔ hardware integration, special move handling |
-| `gantry_controller.h/.cpp` | G-code generation, GRBL serial comms, capture zone tracking |
+| `game_controller.h/.cpp` | Engine ↔ hardware integration, special move handling, game loop orchestration |
+| `gantry_controller.h/.cpp` | G-code generation, GRBL serial comms, capture zone tracking, coordinate translation |
 | `board_interpreter.h/.cpp` | Path planning, blocker detection, A\* routing |
+| `board_scanner.h/.cpp` | Hall effect sensor polling via multiplexed GPIO, move detection, capture disambiguation |
+| `piece_tracker.h` | Per-square piece identity tracking for storage-slot-based capture matching |
 
 **`tests/`**
 
@@ -297,6 +353,7 @@ Example dry-run output:
 | `board_interpreter_test.cpp` | Path planning, blocker handling, A\* pathfinding |
 | `game_controller_test.cpp` | Move encoding/decoding, coordinate conversion, physical board state, special moves |
 | `engine_test.cpp` | Perft, evaluation sanity, tactical positions, skill level, repetition detection |
+| `board_scanner_test.cpp` | Sensor move detection, storage-slot capture disambiguation, PieceTracker integration |
 | `generate_test_report.py` | Runs all binaries and writes `TEST_RESULTS.md` |
 
 ---
@@ -313,16 +370,16 @@ The codebase uses two coordinate systems that are explicitly converted at the en
 
 ---
 
-## Capture Zone Layout
+## Storage Zone Layout
 
-Captured pieces are stored in two zones flanking the board. Each zone has two columns (pawns / pieces) with 2-inch vertical spacing matching the board squares.
+Captured pieces are stored in two zones flanking the board. Each zone has two columns (back-rank pieces / pawns) with 2-inch vertical spacing matching the board squares. Each storage slot is monitored by a dedicated hall effect sensor, enabling the system to detect *which specific slot* a captured piece was placed in.
 
 | Zone | X center | Y range | Contents |
 |---|---|---|---|
-| Black captures (left) | 1.5" | 4" – 18" | White pieces taken by black |
-| White captures (right) | 20.5" | 4" – 18" | Black pieces taken by white |
+| Black storage (left) | 1.5" | 4" – 18" | White pieces taken by black |
+| White storage (right) | 20.5" | 4" – 18" | Black pieces taken by white |
 
-Pawns and back-rank pieces occupy separate columns within each zone. The controller tracks slots independently for white pawns, white pieces, black pawns, and black pieces.
+Within each zone, slots are assigned to specific starting pieces (rook-a through rook-h for back-rank pieces, pawn-a through pawn-h for pawns). The `PieceTracker` maps each piece's current board square to its starting slot, allowing the system to verify that captured pieces are placed in the correct storage position.
 
 ---
 
@@ -332,15 +389,24 @@ Pawns and back-rank pieces occupy separate columns within each zone. The control
 |---|---|
 | Bitboard engine & UCI | ✅ Complete |
 | G-code generation pipeline | ✅ Complete |
-| Dry run mode (engine-vs-engine) | ✅ Verified |
+| Dry run mode (engine-vs-engine) | ✅ Complete |
 | Simulation mode | ✅ Complete |
 | Serial / GRBL integration | ✅ Complete |
 | Engine difficulty system (Easy / Medium / Hard) | ✅ Complete |
-| Comprehensive test suite (307+ assertions) | ✅ Complete |
+| Hall effect sensor scanning (96 sensors, 6 muxes) | ✅ Complete |
+| Sensor-based human move detection | ✅ Complete |
+| Storage-slot capture disambiguation (PieceTracker) | ✅ Complete |
+| Comprehensive test suite (300+ assertions) | ✅ Complete |
 | CI test report via GitHub Actions | ✅ Complete |
 | Physical board testing | 🔧 In progress |
 | En passant path planning | 🔧 In progress |
 | Promotion handling | 🔧 In progress |
+
+---
+
+## License
+
+This program is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License v3.0** as published by the Free Software Foundation. See [LICENSE](LICENSE) for details.
 
 ---
 
@@ -351,4 +417,4 @@ This prototype applies engineering principles and computer science fundamentals 
 
 ---
 
-*Kirin v0.3.1 — Colorado School of Mines, 2026*
+*Kirin v0.3 — Colorado School of Mines, 2026*

@@ -61,6 +61,7 @@
 #define KIRIN_BOARD_SCANNER_H
 
 #include "board_interpreter.h"
+#include "piece_tracker.h"
 #include <cstdint>
 
 /************ GPIO Pin Configuration ************/
@@ -113,10 +114,12 @@ struct ScannerMoveResult {
     bool success;        // True if a legal move was matched
     bool timeout;        // True if the wait timed out
     bool illegalAlert;   // True if we alerted about an unrecognized state
+    bool wrongSlot;      // True if a piece was placed in the wrong storage slot
     char uciString[6];   // UCI string representation (e.g. "e2e4\0")
 
     ScannerMoveResult()
-        : engineMove(0), success(false), timeout(false), illegalAlert(false) {
+        : engineMove(0), success(false), timeout(false), illegalAlert(false),
+          wrongSlot(false) {
         uciString[0] = '\0';
     }
 };
@@ -171,21 +174,27 @@ private:
      * Try to match an observed board + storage state against the engine's
      * legal moves.
      *
-     * The storage zone sensors are the key to disambiguating captures from
-     * pondering. A capture is only recognized when:
-     *   - The board occupancy diff matches a capture move, AND
-     *   - A new piece has appeared in the appropriate storage zone.
+     * Capture disambiguation uses storage slot identity:
+     *   - When a storage slot gains a piece, the slot tells us which
+     *     specific piece was captured (by its starting position).
+     *   - The PieceTracker tells us where that piece currently sits.
+     *   - We only match captures whose target is that square.
      *
-     * For non-capture moves, the storage zones must be unchanged.
+     * For non-capture moves, no storage slot should have changed.
      *
      * @param before          Board occupancy before the move
      * @param after           Board occupancy after the move
-     * @param storageChanged  True if either storage zone has gained a piece
+     * @param captureSlot     The specific storage slot that gained a piece,
+     *                        or SLOT_NONE if no storage change detected
+     * @param capturedIsWhite True if the captured piece is white (i.e., it
+     *                        appeared in white's storage zone)
+     * @param tracker         PieceTracker for mapping slot → current square
      * @param[out] move       The matched engine move (if exactly one matches)
      * @return true if exactly one legal move matches the observed change
      */
     bool matchLegalMove(Bitboard before, Bitboard after,
-                        bool storageChanged, int& move);
+                        int captureSlot, bool capturedIsWhite,
+                        const PieceTracker& tracker, int& move);
 
 public:
     /**
@@ -276,9 +285,11 @@ public:
      *   2. Waiting for both board and storage to stabilize (debounce)
      *   3. Diffing the new state against the baselines
      *   4. Checking if the diff matches exactly one legal engine move,
-     *      using the storage zone change to disambiguate captures:
-     *        - If a storage sensor gained a piece → this is a capture
+     *      using the specific storage slot to disambiguate captures:
+     *        - If a storage slot gained a piece → identify which piece
+     *          was captured via PieceTracker, match the capture
      *        - If storage is unchanged → this is a non-capture move
+     *        - If the wrong slot was used → reject and alert the player
      *   5. If no legal move matches, going back to step 1 (the move
      *      isn't finished yet — the player is still mid-move)
      *   6. If the board sits in an unrecognized state for too long,
@@ -287,8 +298,8 @@ public:
      * This approach cleanly handles:
      *   - Long pauses (piece held in the air — board unstable or unchanged,
      *     storage unchanged → keep waiting)
-     *   - Captures (source square clears on board, storage zone gains a piece
-     *     → unambiguous capture signal, no timeout needed)
+     *   - Captures (source square clears on board, storage slot gains a piece
+     *     → unambiguous via slot identity)
      *   - Take-backs (piece lifted and put back → board returns to original,
      *     storage unchanged → keep waiting)
      *   - Castling (intermediate state doesn't match; final state with both
@@ -298,19 +309,25 @@ public:
      * @param currentOccupancy  The board occupancy before the expected move
      * @param currentBlackStorage  Black storage zone baseline
      * @param currentWhiteStorage  White storage zone baseline
+     * @param tracker           PieceTracker for mapping storage slots to pieces
      * @param timeoutMs         Maximum time to wait (0 = wait forever)
      * @param illegalStateCallback  Optional callback invoked when the board
      *                              has been in an unrecognized state for
      *                              ILLEGAL_STATE_ALERT_MS. Called once per
      *                              unrecognized-state episode. Can be nullptr.
+     * @param wrongSlotCallback  Optional callback invoked when a captured
+     *                           piece is placed in the wrong storage slot.
+     *                           Can be nullptr.
      * @return ScannerMoveResult with the matched engine move, or failure info
      */
     ScannerMoveResult waitForLegalMove(
         Bitboard currentOccupancy,
         uint16_t currentBlackStorage,
         uint16_t currentWhiteStorage,
+        const PieceTracker& tracker,
         int timeoutMs = 0,
-        void (*illegalStateCallback)() = nullptr
+        void (*illegalStateCallback)() = nullptr,
+        void (*wrongSlotCallback)() = nullptr
     );
 
     /*** Legacy / Low-Level (still useful for diagnostics) ***/

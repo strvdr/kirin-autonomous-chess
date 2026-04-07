@@ -17,6 +17,7 @@
 */
 
 #include "board_scanner.h"
+#include "piece_tracker.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -383,7 +384,27 @@ uint16_t BoardScanner::scanStorageDebounced(bool isWhiteSide) {
 /************ Legal Move Matching ************/
 
 bool BoardScanner::matchLegalMove(Bitboard before, Bitboard after,
-                                  bool storageChanged, int& matchedMove) {
+                                  int captureSlot, bool capturedIsWhite,
+                                  const PieceTracker& tracker,
+                                  int& matchedMove) {
+    // If a storage slot gained a piece, find where that piece currently
+    // sits on the board. This is the key to disambiguation: the slot
+    // tells us the exact identity of the captured piece.
+    int capturedPieceSquare = -1;
+    bool isCapture = (captureSlot != SLOT_NONE);
+
+    if (isCapture) {
+        // The captured piece is on the opponent's side.
+        // capturedIsWhite tells us which side the piece belongs to.
+        capturedPieceSquare = tracker.getSquareForSlot(capturedIsWhite, captureSlot);
+
+        if (capturedPieceSquare < 0) {
+            // The slot says this piece should be on the board, but the
+            // tracker says it's already been captured. Wrong slot.
+            return false;
+        }
+    }
+
     // Generate all legal moves from the current engine state
     moves moveList;
     moveList.count = 0;
@@ -422,23 +443,32 @@ bool BoardScanner::matchLegalMove(Bitboard before, Bitboard after,
         castle = castleCopy;
         hashKey = hashKeyCopy;
 
-        // First gate: capture flag must agree with storage change.
-        // If a storage sensor gained a piece, only capture moves qualify.
-        // If storage is unchanged, only non-capture moves qualify.
-        // This is the key insight that eliminates the pondering ambiguity:
-        //   - Player holds piece in the air for 30 seconds: board shows a
-        //     cleared square but storage is unchanged → can't match any
-        //     capture, and the board diff doesn't match any non-capture
-        //     either (the piece isn't on any new square) → no match → keep waiting.
-        //   - Player captures: piece removed to storage → storageChanged = true,
-        //     board shows source cleared + destination unchanged → matches
-        //     the capture move.
+        // Gate 1: capture flag must agree with storage change.
         bool moveIsCapture = getCapture(move) != 0;
-        if (moveIsCapture != storageChanged) {
+        if (moveIsCapture != isCapture) {
             continue;
         }
 
-        // Predict what the board occupancy should look like after this move
+        // Gate 2: if this is a capture, the target must be the piece
+        // identified by the storage slot.
+        if (isCapture) {
+            int moveTarget = getTarget(move);
+
+            if (getEnpassant(move)) {
+                // En passant: the captured pawn is on a different square
+                int epCapturedSquare = (getSource(move) / 8) * 8 + (moveTarget % 8);
+                if (epCapturedSquare != capturedPieceSquare) {
+                    continue;
+                }
+            } else {
+                // Normal capture: target square holds the captured piece
+                if (moveTarget != capturedPieceSquare) {
+                    continue;
+                }
+            }
+        }
+
+        // Gate 3: predict the board occupancy after this move and compare
         Bitboard predicted = before;
 
         int source = getSource(move);
@@ -447,18 +477,14 @@ bool BoardScanner::matchLegalMove(Bitboard before, Bitboard after,
         // Clear source square
         bb_clearBit(predicted, source);
 
-        // Handle captures: the captured piece's square gets cleared
+        // Handle captures
         if (getCapture(move)) {
             if (getEnpassant(move)) {
-                // En passant: captured pawn is on a different square than target
                 int capturedPawnSquare = (source / 8) * 8 + (target % 8);
                 bb_clearBit(predicted, capturedPawnSquare);
             }
-            // For normal captures, target was already occupied — the capturing
-            // piece replaces it, so the bit stays set. But the captured piece
-            // was physically removed by the human (it's in storage now), and
-            // the capturing piece takes its place. Net effect on the occupancy
-            // bit: still set. So no change needed for normal captures.
+            // Normal captures: target was occupied and stays occupied
+            // (capturing piece replaces captured piece). No change needed.
         }
 
         // Set target square (piece lands here)
@@ -493,20 +519,29 @@ bool BoardScanner::matchLegalMove(Bitboard before, Bitboard after,
         return true;
     }
 
-    // matchCount == 0: no legal move produces this board state (mid-move, etc.)
-    // matchCount > 1: ambiguous (e.g. promotion variants — the board occupancy
-    //   is the same for queen, rook, bishop, knight promotions). In that case,
-    //   default to queen promotion — the overwhelmingly common choice.
+    // matchCount > 1: ambiguous. With storage slot identity, the only
+    // remaining ambiguity is promotion variants (same source, same target,
+    // same capture, different promoted piece). Default to queen.
     if (matchCount > 1) {
-        // Try to find the queen promotion among the matches
-        // Re-scan the matches (cheap — we already know the predicted state works)
+        // All matches should be promotion variants. Find the queen promotion.
+        // Re-scan: regenerate and find queen promotion among matches.
         for (int i = 0; i < moveList.count; i++) {
             int move = moveList.moves[i];
             int promoted = getPromoted(move);
             if (promoted && (promoted == Q || promoted == q)) {
-                // Verify it's one of our matches by re-checking
+                // Verify it matches by re-checking gates
                 bool moveIsCapture = getCapture(move) != 0;
-                if (moveIsCapture != storageChanged) continue;
+                if (moveIsCapture != isCapture) continue;
+
+                if (isCapture) {
+                    int moveTarget = getTarget(move);
+                    if (getEnpassant(move)) {
+                        int epSq = (getSource(move) / 8) * 8 + (moveTarget % 8);
+                        if (epSq != capturedPieceSquare) continue;
+                    } else {
+                        if (moveTarget != capturedPieceSquare) continue;
+                    }
+                }
 
                 Bitboard predicted = before;
                 bb_clearBit(predicted, getSource(move));
@@ -522,7 +557,6 @@ bool BoardScanner::matchLegalMove(Bitboard before, Bitboard after,
                 }
             }
         }
-        // If no queen promotion found, give up (shouldn't happen)
     }
 
     return false;
@@ -534,8 +568,10 @@ ScannerMoveResult BoardScanner::waitForLegalMove(
     Bitboard currentOccupancy,
     uint16_t currentBlackStorage,
     uint16_t currentWhiteStorage,
+    const PieceTracker& tracker,
     int timeoutMs,
-    void (*illegalStateCallback)()
+    void (*illegalStateCallback)(),
+    void (*wrongSlotCallback)()
 ) {
     ScannerMoveResult result;
     auto startTime = std::chrono::steady_clock::now();
@@ -614,20 +650,64 @@ ScannerMoveResult BoardScanner::waitForLegalMove(
             continue;
         }
 
-        // Determine if a storage zone gained a piece.
-        // We use popcount: if the new storage has more bits set than the
-        // baseline, a captured piece was placed in storage.
-        int oldStorageCount = __builtin_popcount(currentBlackStorage) +
-                              __builtin_popcount(currentWhiteStorage);
-        int newStorageCount = __builtin_popcount(stableBlack) +
-                              __builtin_popcount(stableWhite);
-        bool storageGainedPiece = (newStorageCount > oldStorageCount);
+        // Identify which specific storage slot changed (if any).
+        // New bits in storage = slots that gained a piece.
+        uint16_t newBlackSlots = stableBlack & ~currentBlackStorage;
+        uint16_t newWhiteSlots = stableWhite & ~currentWhiteStorage;
+
+        int captureSlot = SLOT_NONE;
+        bool capturedIsWhite = false;
+
+        // Check if exactly one new slot appeared
+        int newBlackCount = __builtin_popcount(newBlackSlots);
+        int newWhiteCount = __builtin_popcount(newWhiteSlots);
+
+        if (newBlackCount == 1 && newWhiteCount == 0) {
+            // A piece was placed in black's storage → a black piece was captured
+            captureSlot = __builtin_ctz(newBlackSlots);  // Which slot (0-15)
+            capturedIsWhite = false;  // Black piece captured
+        } else if (newWhiteCount == 1 && newBlackCount == 0) {
+            // A piece was placed in white's storage → a white piece was captured
+            captureSlot = __builtin_ctz(newWhiteSlots);
+            capturedIsWhite = true;   // White piece captured
+        } else if (newBlackCount > 1 || newWhiteCount > 1 ||
+                   (newBlackCount == 1 && newWhiteCount == 1)) {
+            // Multiple slots changed at once — something is wrong.
+            // Keep waiting; this might be a transient state.
+            if (!inUnrecognizedState) {
+                inUnrecognizedState = true;
+                unrecognizedSince = std::chrono::steady_clock::now();
+                alertFired = false;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
+            continue;
+        }
+        // else: no new slots (newBlackCount == 0 && newWhiteCount == 0)
+        // → non-capture move or mid-move state. captureSlot stays SLOT_NONE.
+
+        // Validate the slot: if a slot gained a piece, but the piece
+        // that belongs to that slot is already captured, the player
+        // used the wrong slot.
+        if (captureSlot != SLOT_NONE) {
+            if (!tracker.isPieceAlive(capturedIsWhite, captureSlot)) {
+                // Wrong slot: this piece was already captured.
+                if (wrongSlotCallback) {
+                    wrongSlotCallback();
+                }
+                result.wrongSlot = true;
+                // Don't return — the player needs to fix this.
+                // Keep waiting for them to move the piece to the right slot.
+                std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
+                continue;
+            }
+        }
 
         // We have a stable state that differs from the original.
-        // Try to match it against a legal move, using the storage signal
-        // to disambiguate captures from pondering.
+        // Try to match it against a legal move, using the specific storage
+        // slot to identify which piece was captured.
         int matchedMove = 0;
-        if (matchLegalMove(currentOccupancy, stableBoard, storageGainedPiece, matchedMove)) {
+        if (matchLegalMove(currentOccupancy, stableBoard,
+                           captureSlot, capturedIsWhite, tracker, matchedMove)) {
             // We found exactly one legal move that produces this board state.
             result.engineMove = matchedMove;
             result.success = true;
@@ -652,10 +732,26 @@ ScannerMoveResult BoardScanner::waitForLegalMove(
             return result;
         }
 
-        // No legal move matches. The player is mid-move (e.g., they've lifted
-        // their piece but haven't placed it yet, or they've removed the
-        // captured piece to storage but haven't moved their own piece yet).
+        // No legal move matches. Could be:
+        // - Mid-move (player hasn't finished moving yet)
+        // - Wrong storage slot (captureSlot doesn't match any legal capture)
         //
+        // If a storage slot changed but no capture matches, that's a wrong-slot
+        // situation — the piece identity doesn't correspond to any legal capture.
+        if (captureSlot != SLOT_NONE) {
+            // A piece was placed in storage but it doesn't match any legal
+            // capture from the current board state. Wrong slot.
+            if (wrongSlotCallback && !alertFired) {
+                wrongSlotCallback();
+                alertFired = true;
+            }
+            result.wrongSlot = true;
+            // Keep waiting — player needs to fix it
+            std::this_thread::sleep_for(std::chrono::milliseconds(POLL_INTERVAL_MS));
+            continue;
+        }
+
+        // No storage change and no match — player is mid-move.
         // Track how long we've been in this unrecognized state.
         if (!inUnrecognizedState) {
             inUnrecognizedState = true;

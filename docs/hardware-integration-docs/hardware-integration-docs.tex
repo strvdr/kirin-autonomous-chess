@@ -353,6 +353,123 @@ Within each board mux, the 16 channels map to squares as follows:
 
 The pattern is: channels 0--7 map to the higher rank (file a through h), channels 8--15 map to the lower rank. For storage muxes (4 and 5), channels 0--7 are back-rank piece slots and channels 8--15 are pawn slots.
 
+\subsection{Full Board Sensor Map}
+
+The diagram below shows the complete mapping from every board square to its mux and channel. Each cell shows \textbf{M\textit{x}:C\textit{y}} where \textit{x} is the mux number (0--3) and \textit{y} is the channel (0--15). The mux select address (S3 S2 S1 S0) is shown for each channel on the right.
+
+\begin{center}
+\begin{tikzpicture}[scale=0.85]
+    % Colors for each mux
+    \definecolor{mux0}{RGB}{200,220,255}
+    \definecolor{mux1}{RGB}{200,255,220}
+    \definecolor{mux2}{RGB}{255,240,200}
+    \definecolor{mux3}{RGB}{255,210,210}
+    
+    % Draw the 8x8 grid
+    \foreach \col in {0,...,7} {
+        \foreach \row in {0,...,7} {
+            % Determine mux number from row
+            \pgfmathtruncatemacro{\muxnum}{int(\row/2)}
+            % Determine channel: (row%2)*8 + col
+            \pgfmathtruncatemacro{\rowmod}{mod(\row,2)}
+            \pgfmathtruncatemacro{\chan}{\rowmod*8 + \col}
+            
+            % Pick color based on mux
+            \ifnum\muxnum=0 \def\cellcolor{mux0}\fi
+            \ifnum\muxnum=1 \def\cellcolor{mux1}\fi
+            \ifnum\muxnum=2 \def\cellcolor{mux2}\fi
+            \ifnum\muxnum=3 \def\cellcolor{mux3}\fi
+            
+            % Draw cell
+            \fill[\cellcolor] (\col*2, -\row*1.2) rectangle ++(2, -1.2);
+            \draw[gray] (\col*2, -\row*1.2) rectangle ++(2, -1.2);
+            
+            % Mux:Channel label
+            \node[font=\footnotesize\bfseries] at (\col*2+1, -\row*1.2-0.4) {M\muxnum:C\chan};
+            
+            % Square name
+            \pgfmathtruncatemacro{\rank}{8 - \row}
+            \node[font=\scriptsize, gray] at (\col*2+1, -\row*1.2-0.85) {%
+                \ifcase\col a\or b\or c\or d\or e\or f\or g\or h\fi\rank};
+        }
+    }
+    
+    % File labels (top)
+    \foreach \col/\file in {0/a, 1/b, 2/c, 3/d, 4/e, 5/f, 6/g, 7/h} {
+        \node[font=\small\bfseries] at (\col*2+1, 0.4) {\file};
+    }
+    
+    % Rank labels (left)
+    \foreach \row in {0,...,7} {
+        \pgfmathtruncatemacro{\rank}{8 - \row}
+        \node[font=\small\bfseries] at (-0.5, -\row*1.2-0.6) {\rank};
+    }
+    
+    % Mux labels (right side)
+    \node[font=\small\bfseries, fill=mux0, draw=gray, rounded corners, minimum width=2.2cm] 
+        at (18.5, -0.6-0.6) {Mux 0 (GPIO 5)};
+    \node[font=\small\bfseries, fill=mux1, draw=gray, rounded corners, minimum width=2.2cm] 
+        at (18.5, -2.4-0.6) {Mux 1 (GPIO 6)};
+    \node[font=\small\bfseries, fill=mux2, draw=gray, rounded corners, minimum width=2.2cm] 
+        at (18.5, -4.8-0.6) {Mux 2 (GPIO 13)};
+    \node[font=\small\bfseries, fill=mux3, draw=gray, rounded corners, minimum width=2.2cm] 
+        at (18.5, -7.2-0.6) {Mux 3 (GPIO 19)};
+    
+    % Select address reference (bottom)
+    \node[anchor=north west, font=\small, text width=16cm] at (0, -10.5) {%
+        \textbf{Select address (S3 S2 S1 S0) for each channel:}\\[2pt]
+        \begin{tabular}{cccccccc}
+        C0: 0000 & C1: 0001 & C2: 0010 & C3: 0011 & C4: 0100 & C5: 0101 & C6: 0110 & C7: 0111 \\
+        C8: 1000 & C9: 1001 & C10: 1010 & C11: 1011 & C12: 1100 & C13: 1101 & C14: 1110 & C15: 1111
+        \end{tabular}
+    };
+\end{tikzpicture}
+\end{center}
+
+\subsection{Storage Zone Sensor Map}
+
+The two storage zone muxes (4 and 5) each have 16 channels mapped to piece storage slots:
+
+\begin{center}
+\begin{tikzpicture}[scale=0.85]
+    \definecolor{storebk}{RGB}{255,210,210}
+    \definecolor{storewh}{RGB}{200,220,255}
+    
+    % Black storage (left)
+    \node[font=\large\bfseries] at (3.5, 1) {Black Storage --- Mux 4 (GPIO 26)};
+    \foreach \slot in {0,...,7} {
+        \fill[storebk] (0, -\slot*0.9) rectangle ++(3.5, -0.9);
+        \draw[gray] (0, -\slot*0.9) rectangle ++(3.5, -0.9);
+        \node[font=\footnotesize] at (1.75, -\slot*0.9-0.45) {C\slot: piece slot \slot};
+    }
+    \foreach \slot in {0,...,7} {
+        \pgfmathtruncatemacro{\chan}{\slot+8}
+        \fill[storebk!60] (4, -\slot*0.9) rectangle ++(3.5, -0.9);
+        \draw[gray] (4, -\slot*0.9) rectangle ++(3.5, -0.9);
+        \node[font=\footnotesize] at (5.75, -\slot*0.9-0.45) {C\chan: pawn slot \slot};
+    }
+    
+    % White storage (right)
+    \node[font=\large\bfseries] at (14.5, 1) {White Storage --- Mux 5 (GPIO 16)};
+    \foreach \slot in {0,...,7} {
+        \fill[storewh] (11, -\slot*0.9) rectangle ++(3.5, -0.9);
+        \draw[gray] (11, -\slot*0.9) rectangle ++(3.5, -0.9);
+        \node[font=\footnotesize] at (12.75, -\slot*0.9-0.45) {C\slot: piece slot \slot};
+    }
+    \foreach \slot in {0,...,7} {
+        \pgfmathtruncatemacro{\chan}{\slot+8}
+        \fill[storewh!60] (15, -\slot*0.9) rectangle ++(3.5, -0.9);
+        \draw[gray] (15, -\slot*0.9) rectangle ++(3.5, -0.9);
+        \node[font=\footnotesize] at (16.75, -\slot*0.9-0.45) {C\chan: pawn slot \slot};
+    }
+    
+    \node[font=\footnotesize, text width=18cm, anchor=north west] at (0, -7.8) {%
+        \textbf{Piece slots (C0--C7):} Rook, Knight, Bishop, Queen, King, Bishop, Knight, Rook (matching files a--h).\\
+        \textbf{Pawn slots (C8--C15):} One per file, a--h.
+    };
+\end{tikzpicture}
+\end{center}
+
 \tipbox{If your physical wiring doesn't match this channel order, you have two options: re-wire the sensors, or modify \texttt{toSquareIndex()} in \texttt{board\_scanner.cpp} to match your actual wiring. Re-wiring is usually easier.}
 
 \section{A3144 Sensor Circuit}
