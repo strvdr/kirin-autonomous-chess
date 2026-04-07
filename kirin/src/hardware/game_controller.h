@@ -33,6 +33,7 @@
 #include "board_interpreter.h"
 #include "gantry_controller.h"
 #include "board_scanner.h"
+#include "piece_tracker.h"
 
 /************ Engine Move Decoding Helpers ************/
 // Inline wrappers around the engine's move encoding bit layout.
@@ -127,6 +128,7 @@ private:
     Gantry::GrblController gantry;
     BoardScanner scanner;
     PhysicalBoard physicalBoard;
+    PieceTracker pieceTracker;
     
     // State
     bool gameInProgress;
@@ -141,6 +143,9 @@ private:
     
     // Callback for illegal board state detection
     static void onIllegalState();
+
+    // Callback for wrong storage slot detection
+    static void onWrongSlot();
     
 public:
     GameController();
@@ -299,6 +304,20 @@ public:
      * Get the board scanner (for diagnostics and direct access)
      */
     BoardScanner& getScanner() { return scanner; }
+    
+    /**
+     * Get the piece tracker (for diagnostics and direct access)
+     */
+    const PieceTracker& getPieceTracker() const { return pieceTracker; }
+    PieceTracker& getPieceTracker() { return pieceTracker; }
+
+    /**
+     * Update the piece tracker after an engine move has been applied.
+     * Call this after makeMove() succeeds so the tracker stays in sync.
+     *
+     * @param engineMove  The engine move that was just applied
+     */
+    void updateTracker(int engineMove);
     
     /**
      * Check if hardware is connected

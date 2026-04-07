@@ -115,6 +115,16 @@ void GameController::onIllegalState() {
     // other physical feedback on the board to alert the player.
 }
 
+void GameController::onWrongSlot() {
+    printf("\n");
+    printf("  *** WRONG STORAGE SLOT ***\n");
+    printf("  The captured piece was placed in the wrong storage slot.\n");
+    printf("  Each piece has a designated slot matching its starting position.\n");
+    printf("  Please move the piece to the correct labeled slot.\n");
+    printf("  (The system will continue waiting.)\n");
+    printf("\n");
+}
+
 /*** Setup ***/
 
 bool GameController::connectHardware(const char* port) {
@@ -181,6 +191,12 @@ void GameController::syncWithEngine() {
     
     // Sync the scanner's board baseline
     scanner.setLastScan(occupancy[both]);
+    
+    // Initialize piece tracker for starting position.
+    // This assumes syncWithEngine is called from a standard starting
+    // position. For FEN-loaded positions, the tracker would need a
+    // different initialization path.
+    pieceTracker.initStartingPosition();
     
     // If scanner is initialized, also snapshot the storage zones
     // so we have a fresh baseline for capture detection
@@ -285,8 +301,10 @@ bool GameController::waitForHumanMove(int& engineMove, int timeoutMs) {
         currentOccupancy,
         blackStorage,
         whiteStorage,
+        pieceTracker,
         timeoutMs,
-        &GameController::onIllegalState
+        &GameController::onIllegalState,
+        &GameController::onWrongSlot
     );
     
     if (result.success) {
@@ -685,6 +703,44 @@ void GameController::printBoardMismatch(Bitboard expected, Bitboard actual) {
         printf("\n");
     }
     printf("\n");
+}
+
+/*** Piece Tracker Updates ***/
+
+void GameController::updateTracker(int engineMove) {
+    int source = EngineMove::getSource(engineMove);
+    int target = EngineMove::getTarget(engineMove);
+    int piece = EngineMove::getPiece(engineMove);
+    bool isWhite = isWhitePiece(piece);
+    bool isCapture = EngineMove::getCapture(engineMove);
+
+    if (isCapture) {
+        if (EngineMove::getEnpassant(engineMove)) {
+            // En passant: captured pawn is on a different square
+            int capturedSquare = (source / 8) * 8 + (target % 8);
+            pieceTracker.applyMove(source, target, isWhite, true,
+                                   capturedSquare, !isWhite);
+        } else {
+            // Normal capture: captured piece is on the target square
+            pieceTracker.applyMove(source, target, isWhite, true,
+                                   target, !isWhite);
+        }
+    } else {
+        pieceTracker.applyMove(source, target, isWhite, false);
+    }
+
+    // Handle castling: also move the rook
+    if (EngineMove::getCastle(engineMove)) {
+        if (target == g1) {        // White kingside
+            pieceTracker.applyRookCastle(h1, f1, true);
+        } else if (target == c1) { // White queenside
+            pieceTracker.applyRookCastle(a1, d1, true);
+        } else if (target == g8) { // Black kingside
+            pieceTracker.applyRookCastle(h8, f8, false);
+        } else if (target == c8) { // Black queenside
+            pieceTracker.applyRookCastle(a8, d8, false);
+        }
+    }
 }
 
 /*** State ***/

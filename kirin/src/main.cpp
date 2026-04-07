@@ -1,6 +1,5 @@
 /*   Kirin is an autonomous chess system that allows you to play against an AI opponent in the real world.
 *    Copyright (C) 2026 Strydr Silverberg
-*    attacks.cpp - Attack tables and magic bitboard lookups
 *
 *    This program is free software: you can redistribute it and/or modify
 *    it under the terms of the GNU General Public License as published by
@@ -188,6 +187,9 @@ static void runSensorGameLoop(GameController& controller, bool engineWhite) {
             // Advance the engine state
             makeMove(bestMove, allMoves);
 
+            // Keep PieceTracker in sync (for storage-slot capture disambiguation)
+            controller.updateTracker(bestMove);
+
             // Sync controller after engine state change
             controller.syncWithEngine();
 
@@ -244,6 +246,9 @@ static void runSensorGameLoop(GameController& controller, bool engineWhite) {
                 printf("Engine rejected the detected move — this is a bug.\n");
                 continue;
             }
+
+            // Keep PieceTracker in sync
+            controller.updateTracker(humanMove);
 
             // Sync controller after engine state change
             controller.syncWithEngine();
@@ -414,6 +419,7 @@ void runPhysicalMode(const char* port) {
                     if (controller.executeEngineMove(bestMove)) {
                         // Hardware succeeded — advance engine state
                         makeMove(bestMove, allMoves);
+                        controller.updateTracker(bestMove);
                         controller.syncWithEngine();
                         
                         printf("Engine plays: ");
@@ -454,6 +460,7 @@ void runPhysicalMode(const char* port) {
                 continue;
             }
             
+            controller.updateTracker(move);
             controller.syncWithEngine();
             
             printf("Move: %s\n", moveStr);
@@ -475,6 +482,7 @@ void runPhysicalMode(const char* port) {
                 if (controller.executeEngineMove(bestMove)) {
                     // Hardware succeeded — advance engine state
                     makeMove(bestMove, allMoves);
+                    controller.updateTracker(bestMove);
                     controller.syncWithEngine();
                     
                     printf("Engine plays: ");
@@ -511,6 +519,7 @@ void runPhysicalMode(const char* port) {
                 if (controller.executeEngineMove(bestMove)) {
                     // Hardware succeeded — advance engine state
                     makeMove(bestMove, allMoves);
+                    controller.updateTracker(bestMove);
                     controller.syncWithEngine();
                     
                     printf("Engine plays: ");
@@ -866,6 +875,7 @@ void runDryRunMode(int maxMoves, int searchDepth) {
         // Advance the engine's bitboard state to match.
         // physicalBoard inside GameController is already updated by executeEngineMove.
         makeMove(bestMove, allMoves);
+        controller.updateTracker(bestMove);
 
         halfMoves++;
 
