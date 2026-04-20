@@ -343,6 +343,13 @@ void runPhysicalMode(const char* port) {
                 printf("  Use 'newgame' for manual move entry instead.\n");
                 continue;
             }
+
+            if (!controller.hasExactTracker()) {
+                printf("Error: Sensor-based play requires exact piece identity tracking.\n");
+                printf("  The current position does not have trusted tracker state.\n");
+                printf("  Start a new game or use 'newgame' for manual move entry.\n");
+                continue;
+            }
             
             bool engineWhite = true;
             if (strstr(input, "black")) {
@@ -567,7 +574,10 @@ void runPhysicalMode(const char* port) {
             const char* fen = input + 4;
             while (*fen == ' ') fen++;
             parseFEN(fen);
+            controller.invalidateTracker();
             controller.syncWithEngine();
+            printf("Tracker state marked unknown for arbitrary FEN.\n");
+            printf("  Sensor-based play is disabled until a new game is started.\n");
             printBoard();
         }
         else if (strcmp(input, "home") == 0) {

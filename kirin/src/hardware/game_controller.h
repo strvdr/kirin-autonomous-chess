@@ -21,10 +21,7 @@
 *    - Converting engine piece types to physical piece types
 *    - Orchestrating move execution on the physical board                    
 *    - Special move handling (castling, en passant, promotion)
-<<<<<<< HEAD
-=======
 *    - Detecting human moves via hall effect sensor scanning
->>>>>>> bc57295dcdaad197d316eef08374e85b225511c8
 *     
 *    IMPORTANT: This header is designed to be included AFTER board_interpreter.h
 *    but BEFORE any engine headers to avoid macro conflicts.
@@ -126,6 +123,11 @@ inline int boardCoordToSquare(const BoardCoord& coord) {
 
 /************ Game Controller Class ************/
 
+enum class TrackerValidity {
+    Exact,
+    Unknown
+};
+
 class GameController {
 private:
     Gantry::GrblController gantry;
@@ -137,12 +139,14 @@ private:
     bool gameInProgress;
     bool waitingForHuman;  // If human plays one side
     bool enginePlaysWhite; // Which side the engine plays
+    TrackerValidity trackerValidity;
     
     // Helper functions for special moves
     bool executeCastlingInternal(int engineMove);
     bool executeEnPassantInternal(int engineMove);
     bool executePromotionInternal(int engineMove);
     bool executeNormalMove(int engineMove);
+    int getCapturedSlotForMove(int engineMove) const;
     
     // Callback for illegal board state detection
     static void onIllegalState();
@@ -184,9 +188,26 @@ public:
     
     /**
      * Synchronize physical board state with engine state
-     * Call this after setting up a position via FEN
+     * without changing per-piece identity tracking.
+     *
+     * This updates occupancy and scanner baselines only. PieceTracker must
+     * be initialized or updated separately so move-history-dependent identity
+     * information is preserved across normal gameplay.
      */
     void syncWithEngine();
+
+    /**
+     * Reset piece identity tracking for a standard new game starting position.
+     * This should only be used when the engine position is the normal start.
+     */
+    void initTrackerForStartingPosition();
+
+    /**
+     * Mark tracker identity as unavailable for slot-based move disambiguation.
+     * Use this after loading arbitrary positions or making manual identity-
+     * destroying edits.
+     */
+    void invalidateTracker();
     
     /*** Game Flow ***/
     
@@ -313,6 +334,12 @@ public:
      */
     const PieceTracker& getPieceTracker() const { return pieceTracker; }
     PieceTracker& getPieceTracker() { return pieceTracker; }
+
+    /**
+     * Query whether slot-based piece identity is still exact.
+     */
+    TrackerValidity getTrackerValidity() const { return trackerValidity; }
+    bool hasExactTracker() const { return trackerValidity == TrackerValidity::Exact; }
 
     /**
      * Update the piece tracker after an engine move has been applied.

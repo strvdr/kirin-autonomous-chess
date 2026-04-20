@@ -86,8 +86,26 @@ PhysicalMove engineToPhysicalMove(int engineMove) {
 
 /************ GameController Implementation ************/
 
+int GameController::getCapturedSlotForMove(int engineMove) const {
+    if (!EngineMove::getCapture(engineMove) || !hasExactTracker()) {
+        return SLOT_NONE;
+    }
+
+    if (EngineMove::getEnpassant(engineMove)) {
+        int source = EngineMove::getSource(engineMove);
+        int target = EngineMove::getTarget(engineMove);
+        int capturedSquare = (source / 8) * 8 + (target % 8);
+        return pieceTracker.getSlotAt(capturedSquare);
+    }
+
+    return pieceTracker.getSlotAt(EngineMove::getTarget(engineMove));
+}
+
 GameController::GameController()
-    : gameInProgress(false), waitingForHuman(false), enginePlaysWhite(true) {
+    : gameInProgress(false),
+      waitingForHuman(false),
+      enginePlaysWhite(true),
+      trackerValidity(TrackerValidity::Unknown) {
     // Initialize physical board to starting position occupancy
 }
 
@@ -173,6 +191,9 @@ bool GameController::setupNewGame() {
         printf("Error: Failed to set up pieces\n");
         return false;
     }
+
+    // A fresh setup restores standard piece identities.
+    initTrackerForStartingPosition();
     
     // Sync physical board with engine's starting position
     syncWithEngine();
@@ -191,13 +212,7 @@ void GameController::syncWithEngine() {
     
     // Sync the scanner's board baseline
     scanner.setLastScan(occupancy[both]);
-    
-    // Initialize piece tracker for starting position.
-    // This assumes syncWithEngine is called from a standard starting
-    // position. For FEN-loaded positions, the tracker would need a
-    // different initialization path.
-    pieceTracker.initStartingPosition();
-    
+
     // If scanner is initialized, also snapshot the storage zones
     // so we have a fresh baseline for capture detection
     if (scanner.isInitialized()) {
@@ -207,11 +222,26 @@ void GameController::syncWithEngine() {
     }
 }
 
+void GameController::initTrackerForStartingPosition() {
+    pieceTracker.initStartingPosition();
+    trackerValidity = TrackerValidity::Exact;
+}
+
+void GameController::invalidateTracker() {
+    trackerValidity = TrackerValidity::Unknown;
+}
+
 /*** Game Flow ***/
 
 bool GameController::executeEngineMove(int engineMove) {
     if (!gantry.isConnected()) {
         printf("Error: Gantry not connected\n");
+        return false;
+    }
+
+    if (EngineMove::getCapture(engineMove) && !hasExactTracker()) {
+        printf("Error: Exact piece identity is required for engine captures.\n");
+        printf("  Start from a new game before executing capture moves.\n");
         return false;
     }
     
@@ -242,17 +272,21 @@ bool GameController::executeNormalMove(int engineMove) {
     }
     
     // Determine captured piece info
-    PieceType capturedType = UNKNOWN;
     bool capturedIsWhite = false;
+    int capturedSlot = SLOT_NONE;
     
     if (EngineMove::getCapture(engineMove)) {
         int capturedPiece = EngineMove::getCapturedPiece(engineMove);
-        capturedType = engineToPhysicalPiece(capturedPiece);
         capturedIsWhite = isWhitePiece(capturedPiece);
+        capturedSlot = getCapturedSlotForMove(engineMove);
+        if (capturedSlot == SLOT_NONE) {
+            printf("Error: Could not resolve exact capture slot for engine move\n");
+            return false;
+        }
     }
     
     // Execute on hardware
-    if (!gantry.executeMove(plan, capturedIsWhite, capturedType)) {
+    if (!gantry.executeMove(plan, capturedIsWhite, capturedSlot)) {
         printf("Error: Hardware execution failed\n");
         return false;
     }
@@ -284,6 +318,13 @@ bool GameController::executeHumanMove(const char* moveStr) {
 bool GameController::waitForHumanMove(int& engineMove, int timeoutMs) {
     if (!scanner.isInitialized()) {
         printf("Error: Board scanner not initialized\n");
+        return false;
+    }
+
+    if (!hasExactTracker()) {
+        printf("Error: Piece identity tracking is unavailable for this position.\n");
+        printf("  Sensor-based move detection requires exact tracker state.\n");
+        printf("  Start from a new game or use manual move entry.\n");
         return false;
     }
     
@@ -415,7 +456,7 @@ bool GameController::executeCastlingInternal(int engineMove) {
         return false;
     }
     
-    if (!gantry.executeMove(rookPlan, false, UNKNOWN)) {
+    if (!gantry.executeMove(rookPlan, false, SLOT_NONE)) {
         printf("Error: Rook move failed during castling\n");
         return false;
     }
@@ -441,7 +482,7 @@ bool GameController::executeCastlingInternal(int engineMove) {
         return false;
     }
     
-    if (!gantry.executeMove(kingPlan, false, UNKNOWN)) {
+    if (!gantry.executeMove(kingPlan, false, SLOT_NONE)) {
         printf("Error: King move failed during castling\n");
         // Rook moved physically but king failed on hardware.
         // Restore physicalBoard to pre-castling state.
@@ -481,21 +522,19 @@ bool GameController::executeEnPassantInternal(int engineMove) {
     // Determine the color of the captured pawn
     bool isWhiteCapturing = isWhitePiece(piece);
     bool capturedIsWhite = !isWhiteCapturing;  // Opposite color
+    int capturedSlot = getCapturedSlotForMove(engineMove);
+    if (capturedSlot == SLOT_NONE) {
+        printf("Error: Could not resolve exact capture slot for en passant\n");
+        return false;
+    }
     
     // Step 1: Remove the captured pawn first
-    int captureSlotIndex = gantry.getNextCaptureSlot(capturedIsWhite, true);  // true = isPawn
-    
-    Gantry::Position capturedPos = Gantry::toPhysical(capturedPawnSquare);
-    Gantry::Position captureZonePos = Gantry::getCapturePosition(capturedIsWhite, true, captureSlotIndex);
-    
-    std::vector<std::string> captureGcode;
-    captureGcode.push_back(Gantry::moveCommand(capturedPos));
-    captureGcode.push_back(Gantry::magnetOn());
-    captureGcode.push_back(Gantry::dwell(100));
-    captureGcode.push_back(Gantry::moveCommand(captureZonePos));
-    captureGcode.push_back(Gantry::magnetOff());
-    captureGcode.push_back(Gantry::dwell(100));
-    
+    std::vector<std::string> captureGcode = Gantry::generateCaptureGcode(
+        capturedPawnSquare,
+        capturedIsWhite,
+        static_cast<Gantry::StartingSlot>(capturedSlot)
+    );
+
     if (!gantry.sendCommands(captureGcode)) {
         printf("Error: Failed to capture en passant pawn\n");
         return false;
@@ -517,7 +556,7 @@ bool GameController::executeEnPassantInternal(int engineMove) {
         return false;
     }
     
-    if (!gantry.executeMove(pawnPlan, false, UNKNOWN)) {
+    if (!gantry.executeMove(pawnPlan, false, SLOT_NONE)) {
         printf("Error: Pawn move failed during en passant\n");
         // Captured pawn removed but capturing pawn didn't move.
         // Restore physicalBoard to pre-move state.
@@ -551,18 +590,21 @@ bool GameController::executePromotionInternal(int engineMove) {
         int source = EngineMove::getSource(engineMove);
         int target = EngineMove::getTarget(engineMove);
         int capturedPiece = EngineMove::getCapturedPiece(engineMove);
-        
         BoardCoord fromCoord = squareToBoardCoord(source);
         BoardCoord toCoord = squareToBoardCoord(target);
         
         // First capture the piece on the promotion square
-        PieceType capturedType = engineToPhysicalPiece(capturedPiece);
         bool capturedIsWhite = isWhitePiece(capturedPiece);
-        
-        int slotIndex = gantry.getNextCaptureSlot(capturedIsWhite, capturedType == PAWN);
-        
+        int capturedSlot = getCapturedSlotForMove(engineMove);
+        if (capturedSlot == SLOT_NONE) {
+            printf("Error: Could not resolve exact capture slot for promotion\n");
+            return false;
+        }
+
         std::vector<std::string> captureGcode = Gantry::generateCaptureGcode(
-            toCoord, capturedIsWhite, capturedType == PAWN, slotIndex
+            toCoord,
+            capturedIsWhite,
+            static_cast<Gantry::StartingSlot>(capturedSlot)
         );
         
         if (!gantry.sendCommands(captureGcode)) {
@@ -585,7 +627,7 @@ bool GameController::executePromotionInternal(int engineMove) {
             return false;
         }
         
-        if (!gantry.executeMove(plan, false, UNKNOWN)) {
+        if (!gantry.executeMove(plan, false, SLOT_NONE)) {
             printf("Error: Pawn move failed during promotion\n");
             // Captured piece removed but pawn didn't move.
             // Restore physicalBoard to pre-move state.

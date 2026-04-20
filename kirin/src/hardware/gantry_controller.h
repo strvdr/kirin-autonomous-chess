@@ -122,7 +122,7 @@ Position toPhysical(const BoardCoord& coord);
 // Convert physical position back to nearest board coordinate
 BoardCoord fromPhysical(const Position& pos);
 
-// Get next available capture slot position based on piece type
+// Get capture/storage position for a generic type-grouped slot.
 // isPawn: true for pawns (column 2), false for back-rank pieces (column 1)
 // slotIndex: which slot (0-7) in the respective column
 Position getCapturePosition(bool isWhitePiece, bool isPawn, int slotIndex);
@@ -154,12 +154,10 @@ std::vector<std::string> generateMovePlanGcode(const MovePlan& plan,
                                                 bool capturedPieceIsWhite,
                                                 PieceType capturedPieceType);
 
-// Generate G-code to move a captured piece to its slot
-// slotIndex: the slot number (0-7) within the piece's column
+// Generate G-code to move a captured piece to an exact designated slot.
 std::vector<std::string> generateCaptureGcode(const BoardCoord& square,
                                                bool isWhitePiece,
-                                               bool isPawn,
-                                               int slotIndex);
+                                               StartingSlot slot);
 
 // Generate G-code to set up a new game (move all pieces from capture zones to board)
 std::vector<std::string> generateNewGameSetup();
@@ -212,18 +210,14 @@ public:
     // Homing
     bool home();
     
-    // Get next available capture slot for a piece type
-    // Returns the slot index (0-7) and increments the counter
-    int getNextCaptureSlot(bool isWhitePiece, bool isPawn);
-    
     // High-level chess operations
     bool executeMove(const MovePlan& plan, 
                      bool capturedPieceIsWhite,
-                     PieceType capturedPieceType);
+                     int capturedSlot);
     
     bool executeCapture(const BoardCoord& square, 
                         bool isWhitePiece, 
-                        PieceType pieceType);
+                        StartingSlot slot);
     
     bool setupNewGame();
     

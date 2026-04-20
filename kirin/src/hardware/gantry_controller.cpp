@@ -153,12 +153,11 @@ std::vector<std::string> generatePathGcode(const Position& start,
 
 std::vector<std::string> generateCaptureGcode(const BoardCoord& square,
                                                bool isWhitePiece,
-                                               bool isPawn,
-                                               int slotIndex) {
+                                               StartingSlot slot) {
     std::vector<std::string> gcode;
     
     Position from = toPhysical(square);
-    Position to = getCapturePosition(isWhitePiece, isPawn, slotIndex);
+    Position to = getStartingSlotPosition(isWhitePiece, slot);
     
     // Pick up piece
     gcode.push_back(moveCommand(from));
@@ -179,6 +178,7 @@ std::vector<std::string> generateMovePlanGcode(const MovePlan& plan,
                                                 bool capturedPieceIsWhite,
                                                 PieceType capturedPieceType) {
     std::vector<std::string> gcode;
+    (void)capturedPieceType;
     
     if (!plan.isValid) {
         return gcode;
@@ -190,14 +190,13 @@ std::vector<std::string> generateMovePlanGcode(const MovePlan& plan,
     // the G-code given a slot index. For now, we use a placeholder that will be
     // replaced by the caller with the actual slot.
     if (plan.primaryMove.isCapture) {
-        bool isPawn = (capturedPieceType == PAWN);
-        // Note: slot index 0 is a placeholder - the GrblController will generate
-        // the correct G-code with the proper slot index
+        // Placeholder exact slot for legacy simulation paths that do not
+        // currently track identity. Real hardware execution uses the
+        // identity-aware GrblController::executeMove path.
         std::vector<std::string> captureGcode = generateCaptureGcode(
             plan.primaryMove.to,
             capturedPieceIsWhite,
-            isPawn,
-            0  // Placeholder - actual slot determined by GrblController
+            SLOT_PAWN_A
         );
         gcode.insert(gcode.end(), captureGcode.begin(), captureGcode.end());
     }
@@ -305,24 +304,6 @@ void GrblController::resetCaptureSlots() {
     whitePiecesCaptured = 0;
     blackPawnsCaptured = 0;
     blackPiecesCaptured = 0;
-}
-
-int GrblController::getNextCaptureSlot(bool isWhitePiece, bool isPawn) {
-    int slotIndex;
-    if (isWhitePiece) {
-        if (isPawn) {
-            slotIndex = whitePawnsCaptured++;
-        } else {
-            slotIndex = whitePiecesCaptured++;
-        }
-    } else {
-        if (isPawn) {
-            slotIndex = blackPawnsCaptured++;
-        } else {
-            slotIndex = blackPiecesCaptured++;
-        }
-    }
-    return slotIndex;
 }
 
 #if HAS_SERIAL
@@ -642,19 +623,16 @@ bool GrblController::setMagnet(bool on) {
 }
 
 bool GrblController::executeCapture(const BoardCoord& square, 
-                                     bool isWhitePiece, 
-                                     PieceType pieceType) {
-    bool isPawn = (pieceType == PAWN);
-    int slotIndex = getNextCaptureSlot(isWhitePiece, isPawn);
-    
-    std::vector<std::string> gcode = generateCaptureGcode(square, isWhitePiece, isPawn, slotIndex);
+                                     bool isWhitePiece,
+                                     StartingSlot slot) {
+    std::vector<std::string> gcode = generateCaptureGcode(square, isWhitePiece, slot);
     
     return sendCommands(gcode);
 }
 
 bool GrblController::executeMove(const MovePlan& plan, 
                                   bool capturedPieceIsWhite,
-                                  PieceType capturedPieceType) {
+                                  int capturedSlot) {
     if (!plan.isValid) {
         return false;
     }
@@ -663,15 +641,11 @@ bool GrblController::executeMove(const MovePlan& plan,
     
     // Step 1: If capture, move captured piece to capture zone first
     // We generate this directly here to use the correct slot index
-    if (plan.primaryMove.isCapture && capturedPieceType != UNKNOWN) {
-        bool isPawn = (capturedPieceType == PAWN);
-        int slotIndex = getNextCaptureSlot(capturedPieceIsWhite, isPawn);
-        
+    if (plan.primaryMove.isCapture && capturedSlot >= 0) {
         std::vector<std::string> captureGcode = generateCaptureGcode(
             plan.primaryMove.to,
             capturedPieceIsWhite,
-            isPawn,
-            slotIndex
+            static_cast<StartingSlot>(capturedSlot)
         );
         gcode.insert(gcode.end(), captureGcode.begin(), captureGcode.end());
     }

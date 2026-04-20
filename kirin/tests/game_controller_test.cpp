@@ -227,6 +227,99 @@ static void testPhysicalBoardSync() {
 }
 
 // ─────────────────────────────────────────────────────────────
+// 4b. PieceTracker state must survive syncWithEngine()
+// ─────────────────────────────────────────────────────────────
+static void testTrackerPersistsAcrossSync() {
+    printHeader("PieceTracker survives syncWithEngine");
+
+    loadFEN(startPosition);
+
+    GameController gc;
+    gc.initTrackerForStartingPosition();
+    gc.syncWithEngine();
+
+    int e2e4 = parseBoardMove("e2e4");
+    TEST_ASSERT(e2e4 != 0, "e2e4 found for tracker persistence");
+    TEST_ASSERT(makeMove(e2e4, allMoves) != 0, "e2e4 applied to engine state");
+    gc.updateTracker(e2e4);
+    gc.syncWithEngine();
+
+    const PieceTracker& trackerAfterE4 = gc.getPieceTracker();
+    TEST_ASSERT(trackerAfterE4.getSquareForSlot(true, Gantry::SLOT_PAWN_E) == e4,
+                "white e-pawn remains tracked on e4 after sync");
+    TEST_ASSERT(trackerAfterE4.getSlotAt(e4) == Gantry::SLOT_PAWN_E,
+                "e4 square retains e-pawn identity after sync");
+
+    int g8f6 = parseBoardMove("g8f6");
+    TEST_ASSERT(g8f6 != 0, "g8f6 found for tracker persistence");
+    TEST_ASSERT(makeMove(g8f6, allMoves) != 0, "g8f6 applied to engine state");
+    gc.updateTracker(g8f6);
+    gc.syncWithEngine();
+
+    const PieceTracker& trackerAfterNf6 = gc.getPieceTracker();
+    TEST_ASSERT(trackerAfterNf6.getSquareForSlot(false, Gantry::SLOT_KNIGHT_G) == f6,
+                "black g-knight remains tracked on f6 after sync");
+    TEST_ASSERT(trackerAfterNf6.getSquareForSlot(true, Gantry::SLOT_PAWN_E) == e4,
+                "white e-pawn identity survives later sync");
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4c. Tracker validity is explicit and can be invalidated
+// ─────────────────────────────────────────────────────────────
+static void testTrackerValidity() {
+    printHeader("Tracker validity");
+
+    GameController gc;
+    TEST_ASSERT(gc.hasExactTracker() == false,
+                "tracker starts unknown before explicit initialization");
+
+    gc.initTrackerForStartingPosition();
+    TEST_ASSERT(gc.hasExactTracker() == true,
+                "tracker becomes exact after starting-position init");
+
+    gc.invalidateTracker();
+    TEST_ASSERT(gc.hasExactTracker() == false,
+                "tracker invalidation clears exact identity state");
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4d. Engine captures require exact tracker state and route via it
+// ─────────────────────────────────────────────────────────────
+static void testEngineCaptureRequiresExactTracker() {
+    printHeader("Engine capture requires exact tracker");
+
+    // Position after 1. d4 e5, so white can capture d4xe5.
+    loadFEN("rnbqkbnr/pppp1ppp/8/4p3/3P4/8/PPP1PPPP/RNBQKBNR w KQkq - 0 2");
+
+    int d4xe5 = parseBoardMove("d4e5");
+    TEST_ASSERT(d4xe5 != 0, "d4xe5 found for engine capture test");
+
+    // Exact tracker path should allow the capture in dry-run mode.
+    {
+        GameController gc;
+        gc.getGantry().enableDryRun();
+        gc.syncWithEngine();
+        gc.initTrackerForStartingPosition();
+        gc.getPieceTracker().applyMove(d2, d4, true, false);
+        gc.getPieceTracker().applyMove(e7, e5, false, false);
+
+        TEST_ASSERT(gc.executeEngineMove(d4xe5) == true,
+                    "engine capture succeeds with exact tracker state");
+    }
+
+    // Unknown tracker must block engine captures to avoid corrupting slots.
+    {
+        GameController gc;
+        gc.getGantry().enableDryRun();
+        gc.syncWithEngine();
+        gc.invalidateTracker();
+
+        TEST_ASSERT(gc.executeEngineMove(d4xe5) == false,
+                    "engine capture is rejected with unknown tracker state");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
 // 5. parseBoardMove – legal move lookup from string
 // ─────────────────────────────────────────────────────────────
 static void testParseBoardMove() {
@@ -527,6 +620,9 @@ int main() {
     testCoordinateConversion();
     testPieceConversion();
     testPhysicalBoardSync();
+    testTrackerPersistsAcrossSync();
+    testTrackerValidity();
+    testEngineCaptureRequiresExactTracker();
     testParseBoardMove();
     testIsGameOver();
     testGameFlow();
