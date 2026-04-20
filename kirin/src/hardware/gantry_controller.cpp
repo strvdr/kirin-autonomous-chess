@@ -574,6 +574,43 @@ static const char* annotateGcode(const std::string& cmd) {
     return "";
 }
 
+int GrblController::getCommandTimeoutMs(const std::string& cmd) const {
+    // Homing can take substantially longer than normal moves, especially if
+    // the gantry starts far from the switches.
+    if (cmd == "$H") {
+        return 120000;
+    }
+
+    // Dwell waits for the requested settle time plus controller overhead.
+    if (cmd.rfind("G4", 0) == 0) {
+        int dwellMs = 0;
+        if (sscanf(cmd.c_str(), "G4 P%d", &dwellMs) == 1) {
+            return dwellMs + 5000;
+        }
+        return 10000;
+    }
+
+    // Estimate linear move duration from distance and feed rate, then add
+    // generous slack for GRBL processing and acceleration.
+    if (cmd.rfind("G1", 0) == 0) {
+        double x = currentPos.x;
+        double y = currentPos.y;
+        double feed = FEED_RATE;
+        if (sscanf(cmd.c_str(), "G1 X%lf Y%lf F%lf", &x, &y, &feed) >= 2) {
+            double dx = x - currentPos.x;
+            double dy = y - currentPos.y;
+            double distance = std::sqrt(dx * dx + dy * dy);
+            double minutes = (feed > 0.0) ? (distance / feed) : 0.0;
+            int travelMs = static_cast<int>(minutes * 60.0 * 1000.0);
+            return travelMs + 8000;
+        }
+        return 15000;
+    }
+
+    // Magnet toggles and other short commands should still allow some slack.
+    return 5000;
+}
+
 bool GrblController::sendCommand(const std::string& cmd) {
     if (dryRunMode) {
         printf("  %-30s%s\n", cmd.c_str(), annotateGcode(cmd));
@@ -590,7 +627,25 @@ bool GrblController::sendCommand(const std::string& cmd) {
         return true;
     }
     if (!send(cmd)) return false;
-    return waitForOk();
+    bool ok = waitForOk(getCommandTimeoutMs(cmd));
+    if (!ok) {
+        return false;
+    }
+
+    if (cmd.rfind("G1", 0) == 0) {
+        double x = currentPos.x, y = currentPos.y;
+        if (sscanf(cmd.c_str(), "G1 X%lf Y%lf", &x, &y) >= 2) {
+            currentPos = Position(x, y);
+        }
+    } else if (cmd == "M3") {
+        magnetEngaged = true;
+    } else if (cmd == "M5") {
+        magnetEngaged = false;
+    } else if (cmd == "$H") {
+        currentPos = Position(0, 0);
+    }
+
+    return true;
 }
 
 bool GrblController::sendCommands(const std::vector<std::string>& cmds) {
@@ -612,7 +667,6 @@ bool GrblController::home() {
 }
 
 bool GrblController::moveTo(const Position& pos) {
-    currentPos = pos;
     return sendCommand(moveCommand(pos));
 }
 
@@ -621,7 +675,6 @@ bool GrblController::moveTo(const BoardCoord& coord) {
 }
 
 bool GrblController::setMagnet(bool on) {
-    magnetEngaged = on;
     return sendCommand(on ? magnetOn() : magnetOff());
 }
 

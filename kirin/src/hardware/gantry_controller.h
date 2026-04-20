@@ -184,6 +184,7 @@ private:
     int blackPawnsCaptured;    // 0-8
     int blackPiecesCaptured;   // 0-8 (non-pawn pieces)
     
+    int getCommandTimeoutMs(const std::string& cmd) const;
     bool send(const std::string& cmd);
     bool waitForOk(int timeoutMs = 5000);
     std::string readLine(int timeoutMs = 1000);

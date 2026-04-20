@@ -70,6 +70,8 @@ void runPhysicalMode(const char* port);
 void runSimulationMode();
 void runDryRunMode(int maxMoves, int searchDepth);
 static void runSensorGameLoop(GameController& controller, bool engineWhite);
+static bool promptForBoardRecovery(GameController& controller);
+static bool finalizePhysicalEngineMove(GameController& controller, int engineMove);
 
 
 
@@ -117,6 +119,45 @@ void printHelp() {
 // This is the core play experience: the human makes moves by physically
 // moving pieces on the board, detected via hall effect sensors. The engine
 // responds by moving pieces via the gantry.
+static bool promptForBoardRecovery(GameController& controller) {
+    printf("Board state mismatch after engine move.\n");
+    printf("Please fix the board and type 'continue' or 'abort'.\n");
+
+    char response[64];
+    while (true) {
+        printf("kirin> ");
+        fflush(stdout);
+        if (fgets(response, sizeof(response), stdin) == nullptr) {
+            controller.stopGame();
+            return false;
+        }
+
+        response[strcspn(response, "\n")] = 0;
+        if (strcmp(response, "continue") == 0) {
+            controller.syncWithEngine();
+            return true;
+        }
+        if (strcmp(response, "abort") == 0) {
+            controller.stopGame();
+            return false;
+        }
+
+        printf("Type 'continue' (after fixing the board) or 'abort'.\n");
+    }
+}
+
+static bool finalizePhysicalEngineMove(GameController& controller, int engineMove) {
+    makeMove(engineMove, allMoves);
+    controller.updateTracker(engineMove);
+    controller.syncWithEngine();
+
+    if (controller.isScannerReady() && !controller.verifyBoardState()) {
+        return promptForBoardRecovery(controller);
+    }
+
+    return true;
+}
+
 static void runSensorGameLoop(GameController& controller, bool engineWhite) {
     printf("\n");
     printf("══════════════════════════════════════════════════════════════\n");
@@ -184,42 +225,13 @@ static void runSensorGameLoop(GameController& controller, bool engineWhite) {
                 break;
             }
 
-            // Advance the engine state
-            makeMove(bestMove, allMoves);
-
-            // Keep PieceTracker in sync (for storage-slot capture disambiguation)
-            controller.updateTracker(bestMove);
-
-            // Sync controller after engine state change
-            controller.syncWithEngine();
-
-            // Verify the physical board matches what the engine expects.
-            // This catches dropped pieces, missed gantry steps, etc.
-            if (!controller.verifyBoardState()) {
-                printf("Board state mismatch after engine move.\n");
-                printf("Please fix the board and type 'continue' or 'abort'.\n");
-                char response[64];
-                while (true) {
-                    printf("kirin> ");
-                    fflush(stdout);
-                    if (fgets(response, sizeof(response), stdin) == nullptr) {
-                        controller.stopGame();
-                        break;
-                    }
-                    response[strcspn(response, "\n")] = 0;
-                    if (strcmp(response, "continue") == 0) {
-                        // Re-sync baselines to the current physical state
-                        // (player has manually fixed the board)
-                        controller.syncWithEngine();
-                        break;
-                    } else if (strcmp(response, "abort") == 0) {
-                        controller.stopGame();
-                        break;
-                    } else {
-                        printf("Type 'continue' (after fixing the board) or 'abort'.\n");
-                    }
+            if (!finalizePhysicalEngineMove(controller, bestMove)) {
+                if (!controller.isGameInProgress()) {
+                    break;
                 }
-                if (!controller.isGameInProgress()) break;
+                printf("Board recovery failed after engine move.\n");
+                controller.stopGame();
+                break;
             }
 
             printBoard();
@@ -424,10 +436,10 @@ void runPhysicalMode(const char* port) {
                 if (bestMove) {
                     // Execute on physical board FIRST
                     if (controller.executeEngineMove(bestMove)) {
-                        // Hardware succeeded — advance engine state
-                        makeMove(bestMove, allMoves);
-                        controller.updateTracker(bestMove);
-                        controller.syncWithEngine();
+                        if (!finalizePhysicalEngineMove(controller, bestMove)) {
+                            printf("Board recovery failed after engine move.\n");
+                            continue;
+                        }
                         
                         printf("Engine plays: ");
                         int source = getSource(bestMove);
@@ -487,10 +499,10 @@ void runPhysicalMode(const char* port) {
             if (bestMove) {
                 // Execute on hardware FIRST
                 if (controller.executeEngineMove(bestMove)) {
-                    // Hardware succeeded — advance engine state
-                    makeMove(bestMove, allMoves);
-                    controller.updateTracker(bestMove);
-                    controller.syncWithEngine();
+                    if (!finalizePhysicalEngineMove(controller, bestMove)) {
+                        printf("Board recovery failed after engine move.\n");
+                        continue;
+                    }
                     
                     printf("Engine plays: ");
                     int source = getSource(bestMove);
@@ -524,10 +536,10 @@ void runPhysicalMode(const char* port) {
             if (bestMove) {
                 // Execute on hardware FIRST
                 if (controller.executeEngineMove(bestMove)) {
-                    // Hardware succeeded — advance engine state
-                    makeMove(bestMove, allMoves);
-                    controller.updateTracker(bestMove);
-                    controller.syncWithEngine();
+                    if (!finalizePhysicalEngineMove(controller, bestMove)) {
+                        printf("Board recovery failed after engine move.\n");
+                        continue;
+                    }
                     
                     printf("Engine plays: ");
                     int source = getSource(bestMove);
@@ -699,6 +711,11 @@ void runSimulationMode() {
         
         std::vector<std::string> gcode = Gantry::generateMovePlanGcode(
             plan, capturedIsWhite, capturedType);
+
+        if (physMove.isCapture) {
+            printf("Note: Simulation capture G-code uses a placeholder storage slot.\n");
+            printf("  Real hardware execution routes captures via exact tracker identity.\n");
+        }
         
         printf("\n--- Generated G-code ---\n");
         for (const auto& cmd : gcode) {
@@ -745,6 +762,11 @@ void runSimulationMode() {
                     enginePlan, 
                     getCapturedPiece(bestMove) ? (getCapturedPiece(bestMove) < 6) : false,
                     getCapturedPiece(bestMove) ? engineToPhysicalPiece(getCapturedPiece(bestMove)) : UNKNOWN);
+
+                if (enginePhysMove.isCapture) {
+                    printf("Note: Simulation capture G-code uses a placeholder storage slot.\n");
+                    printf("  Real hardware execution routes captures via exact tracker identity.\n");
+                }
                 
                 printf("\n--- Engine Move G-code ---\n");
                 for (const auto& cmd : engineGcode) {

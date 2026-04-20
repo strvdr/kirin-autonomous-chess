@@ -478,6 +478,8 @@ bool GameController::executeCastlingInternal(int engineMove) {
                kingPlan.errorMessage ? kingPlan.errorMessage : "unknown error");
         // Rook already moved physically but king planning failed.
         // Restore physicalBoard to pre-castling state.
+        printf("Warning: Castling may be partially executed on the physical board.\n");
+        printf("  Inspect rook/king positions and recover manually before continuing.\n");
         physicalBoard.setOccupancy(savedOccupancy);
         return false;
     }
@@ -486,6 +488,8 @@ bool GameController::executeCastlingInternal(int engineMove) {
         printf("Error: King move failed during castling\n");
         // Rook moved physically but king failed on hardware.
         // Restore physicalBoard to pre-castling state.
+        printf("Warning: Castling may be partially executed on the physical board.\n");
+        printf("  Inspect rook/king positions and recover manually before continuing.\n");
         physicalBoard.setOccupancy(savedOccupancy);
         return false;
     }
@@ -552,6 +556,8 @@ bool GameController::executeEnPassantInternal(int engineMove) {
                pawnPlan.errorMessage ? pawnPlan.errorMessage : "unknown error");
         // Captured pawn already removed physically, but pawn move planning failed.
         // Restore physicalBoard to pre-move state.
+        printf("Warning: En passant capture may be partially executed on the physical board.\n");
+        printf("  Inspect the captured pawn and capturing pawn before continuing.\n");
         physicalBoard.setOccupancy(savedOccupancy);
         return false;
     }
@@ -560,6 +566,8 @@ bool GameController::executeEnPassantInternal(int engineMove) {
         printf("Error: Pawn move failed during en passant\n");
         // Captured pawn removed but capturing pawn didn't move.
         // Restore physicalBoard to pre-move state.
+        printf("Warning: En passant capture may be partially executed on the physical board.\n");
+        printf("  Inspect the captured pawn and capturing pawn before continuing.\n");
         physicalBoard.setOccupancy(savedOccupancy);
         return false;
     }
@@ -623,6 +631,8 @@ bool GameController::executePromotionInternal(int engineMove) {
                    plan.errorMessage ? plan.errorMessage : "unknown error");
             // Captured piece removed but pawn move planning failed.
             // Restore physicalBoard to pre-move state.
+            printf("Warning: Capture-promotion may be partially executed on the physical board.\n");
+            printf("  Inspect the promotion square and storage slot before continuing.\n");
             physicalBoard.setOccupancy(savedOccupancy);
             return false;
         }
@@ -631,6 +641,8 @@ bool GameController::executePromotionInternal(int engineMove) {
             printf("Error: Pawn move failed during promotion\n");
             // Captured piece removed but pawn didn't move.
             // Restore physicalBoard to pre-move state.
+            printf("Warning: Capture-promotion may be partially executed on the physical board.\n");
+            printf("  Inspect the promotion square and storage slot before continuing.\n");
             physicalBoard.setOccupancy(savedOccupancy);
             return false;
         }
