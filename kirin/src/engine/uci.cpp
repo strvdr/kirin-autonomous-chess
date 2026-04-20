@@ -169,8 +169,11 @@ void parseGo(char *command) {
     if (depth == -1)
         depth = 64;
     
-    printf("time: %d  inc: %d  start: %u  stop: %u  depth: %d  timeset:%d\n",
-           timer, inc, startTime, stopTime, depth, timeSet);
+    printf("time: %d  inc: %d  start: %lld  stop: %lld  depth: %d  timeset:%d\n",
+           timer, inc,
+           static_cast<long long>(startTime),
+           static_cast<long long>(stopTime),
+           depth, timeSet);
     
     searchPosition(depth);
 }

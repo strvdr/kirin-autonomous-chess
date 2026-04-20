@@ -19,6 +19,7 @@
 #ifndef KIRIN_UTILS_H
 #define KIRIN_UTILS_H
 
+#include <cstdint>
 #include "types.h"
 
 /************ Time Control Variables ************/
@@ -27,13 +28,13 @@ extern int movesToGo;
 extern int moveTime;
 extern int timer;
 extern int inc;
-extern int startTime;
-extern int stopTime;
+extern std::int64_t startTime;
+extern std::int64_t stopTime;
 extern int timeSet;
 extern int stopped;
 
 /************ Time Control Functions ************/
-int getTimeMS();
+std::int64_t getTimeMS();
 int inputWaiting();
 void readInput();
 void communicate();

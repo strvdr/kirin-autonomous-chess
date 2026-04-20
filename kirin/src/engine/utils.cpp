@@ -18,6 +18,7 @@
 
 #include <unistd.h>
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
 #include <sys/time.h>
 #include "utils.h"
@@ -32,8 +33,8 @@ int movesToGo = 30;
 int moveTime = -1;
 int timer = -1;
 int inc = 0;
-int startTime = 0;
-int stopTime = 0;
+std::int64_t startTime = 0;
+std::int64_t stopTime = 0;
 int timeSet = 0;
 int stopped = 0;
 
@@ -41,21 +42,25 @@ int stopped = 0;
 unsigned int randState = 1804289383;
 
 /************ Time Control Functions (from VICE by Richard Allbert) ************/
-int getTimeMS() { 
+std::int64_t getTimeMS() {
     struct timeval timeValue;
     gettimeofday(&timeValue, NULL);
-    return timeValue.tv_sec * 1000 + timeValue.tv_usec / 1000;
+    return static_cast<std::int64_t>(timeValue.tv_sec) * 1000 +
+           static_cast<std::int64_t>(timeValue.tv_usec) / 1000;
 }
 
 int inputWaiting() {
     fd_set readfds;
     struct timeval tv;
     FD_ZERO(&readfds);
-    FD_SET(fileno(stdin), &readfds);
+    const int stdinFd = fileno(stdin);
+    FD_SET(stdinFd, &readfds);
     tv.tv_sec = 0;
     tv.tv_usec = 0;
-    select(16, &readfds, 0, 0, &tv);
-    return (FD_ISSET(fileno(stdin), &readfds));
+    if (select(stdinFd + 1, &readfds, nullptr, nullptr, &tv) <= 0) {
+        return 0;
+    }
+    return FD_ISSET(stdinFd, &readfds);
 }
 
 void readInput() { 
@@ -63,10 +68,20 @@ void readInput() {
     char input[256] = "", *endc;
 
     if (inputWaiting()) { 
-        stopped = 1;
         do {
             bytes = read(fileno(stdin), input, 256);
         } while (bytes < 0);
+
+        if (bytes <= 0) {
+            return;
+        }
+
+        stopped = 1;
+        if (bytes < static_cast<int>(sizeof(input))) {
+            input[bytes] = 0;
+        } else {
+            input[sizeof(input) - 1] = 0;
+        }
 
         endc = strchr(input, '\n');
         if (endc) *endc = 0;

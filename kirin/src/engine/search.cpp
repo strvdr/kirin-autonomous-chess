@@ -433,6 +433,13 @@ void searchPosition(int depth) {
     stopped = 0;
     followPV = 0;
     scorePV = 0; 
+    bestMove = 0;
+
+    // Direct callers outside the UCI "go" path still need a search start time
+    // for info output and timeout bookkeeping.
+    if (startTime == 0) {
+        startTime = getTimeMS();
+    }
     
     // Clear search data structures
     memset(killerMoves, 0, sizeof(killerMoves));
@@ -471,14 +478,17 @@ void searchPosition(int depth) {
         
         // Print search info
         if (score > -mateValue && score < -mateScore) {
-            printf("info score mate %d depth %d nodes %ld time %d pv ", 
-                   -(score + mateValue) / 2 - 1, currentDepth, nodes, getTimeMS() - startTime);
+            printf("info score mate %d depth %d nodes %ld time %lld pv ",
+                   -(score + mateValue) / 2 - 1, currentDepth, nodes,
+                   static_cast<long long>(getTimeMS() - startTime));
         } else if (score > mateScore && score < mateValue) {
-            printf("info score mate %d depth %d nodes %ld time %d pv ", 
-                   (mateValue - score) / 2 + 1, currentDepth, nodes, getTimeMS() - startTime);   
+            printf("info score mate %d depth %d nodes %ld time %lld pv ",
+                   (mateValue - score) / 2 + 1, currentDepth, nodes,
+                   static_cast<long long>(getTimeMS() - startTime));
         } else {
-            printf("info score cp %d depth %d nodes %ld time %d pv ", 
-                   score, currentDepth, nodes, getTimeMS() - startTime);
+            printf("info score cp %d depth %d nodes %ld time %lld pv ",
+                   score, currentDepth, nodes,
+                   static_cast<long long>(getTimeMS() - startTime));
         }
         
         // Print PV line

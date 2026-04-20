@@ -50,41 +50,48 @@ constexpr double BOARD_SIZE = 12.0;
 constexpr double SQUARE_SIZE = 1.5;
 constexpr double BOARD_MARGIN = 3.0;
 
-// Calibrated square-center origin for the physical board.
-// Measurements supplied from the current frame reference:
-//   a1 = (6.000, 6.125)
-//   a2 = (7.500, 6.125)
-//   b1 = (6.000, 7.625)
+// Calibrated square-center origin for the physical board in the same G54
+// work-coordinate system used by Kirin's normal G1 moves.
+// Current corner calibration:
+//   a1 = (5.000, 4.420)
+//   a8 = (15.500, 4.420)
+//   h1 = (5.000, 14.920)
+//   h8 = (15.500, 14.920)
 // This means ranks advance along +X and files advance along +Y.
-constexpr double A1_CENTER_X = 6.000;
-constexpr double A1_CENTER_Y = 6.125;
+constexpr double A1_CENTER_X = 5.000;
+constexpr double A1_CENTER_Y = 4.420;
 
 /************ Capture Zone Layout ************/
-// 2" vertical spacing (matches board), 1.5" horizontal spacing (two columns)
-constexpr double CAPTURE_VERTICAL_SPACING = 2.0;
+// Two vertical columns per side:
+//   Black side (left of file 1):  P1 R1 / P2 R2 / P3 N1 / P4 N2 / ...
+//   White side (right of file 8): R1 P1 / R2 P2 / N1 P3 / N2 P4 / ...
+// The inner column (closer to the board) holds back-rank pieces.
+// The outer column holds pawns P1-P8.
+// Storage squares are the same 1.5" grid as the board, so rows align exactly
+// with board-file Y coordinates.
+constexpr double CAPTURE_VERTICAL_SPACING = 1.5;
 constexpr double CAPTURE_HORIZONTAL_SPACING = 1.5;
 
-// White capture zone (right side, X = 19" to 22")
-constexpr double WHITE_CAPTURE_COL1_X = BOARD_MARGIN + BOARD_SIZE + 0.75;  // 19.75" (back rank)
-constexpr double WHITE_CAPTURE_COL2_X = BOARD_MARGIN + BOARD_SIZE + 2.25;  // 21.25" (pawns)
+// Storage-column centers derived from the board calibration plus hardware
+// geometry: 0.5" gap from board edge to nearest storage-square edge.
+// White storage is to the right of the h-file.
+constexpr double WHITE_CAPTURE_COL1_X = 17.500;  // inner, back-rank pieces
+constexpr double WHITE_CAPTURE_COL2_X = 19.000;  // outer, pawns
 
-// Black capture zone (left side, X = 0" to 3")
-constexpr double BLACK_CAPTURE_COL1_X = 2.25;  // 2.25" (back rank)
-constexpr double BLACK_CAPTURE_COL2_X = 0.75;  // 0.75" (pawns)
+// Black storage is to the left of the a-file.
+constexpr double BLACK_CAPTURE_COL1_X = 3.000;  // inner, back-rank pieces
+constexpr double BLACK_CAPTURE_COL2_X = 1.500;  // outer, pawns
 
-// Y positions: file a = 4", file h = 18"
-constexpr double CAPTURE_START_Y = A1_CENTER_Y;  // 4.0"
+// Bottom storage row aligns with a1/h1 file height in the calibrated G54 frame.
+constexpr double CAPTURE_START_Y = A1_CENTER_Y;
 
 /************ Movement Parameters ************/
 constexpr double FEED_RATE = 1000.0;  // inches/min
 
 /************ Capture Zone Slots ************/
-// Capture tracking: just count pawns and pieces separately
-// Column 1 (inner): back-rank pieces (max 8 per side)
-// Column 2 (outer): pawns (max 8 per side)
-// Y position determined by count of pieces already captured
-
-// For new game setup, we still need to know starting positions
+// Exact slot identities are preserved in the tracker. The storage layout does
+// not mirror the board-file order for back-rank pieces: it uses physical bins
+// R1, R2, N1, N2, B1, B2, Q, K from bottom to top.
 enum StartingSlot {
     SLOT_ROOK_A = 0,
     SLOT_KNIGHT_B = 1,
@@ -127,10 +134,8 @@ Position toPhysical(const BoardCoord& coord);
 // Convert physical position back to nearest board coordinate
 BoardCoord fromPhysical(const Position& pos);
 
-// Get capture/storage position for a generic type-grouped slot.
-// isPawn: true for pawns (column 2), false for back-rank pieces (column 1)
-// slotIndex: which slot (0-7) in the respective column
-Position getCapturePosition(bool isWhitePiece, bool isPawn, int slotIndex);
+// Get capture/storage position for an exact designated slot.
+Position getCapturePosition(bool isWhitePiece, StartingSlot slot);
 
 // Get starting slot position (for new game setup)
 Position getStartingSlotPosition(bool isWhitePiece, StartingSlot slot);

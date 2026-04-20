@@ -61,27 +61,54 @@ BoardCoord fromPhysical(const Position& pos) {
     return BoardCoord(row, col);
 }
 
-Position getCapturePosition(bool isWhitePiece, bool isPawn, int slotIndex) {
-    double x, y;
-    
-    // Y position based on slot index (0-7), matching board rank spacing
-    y = CAPTURE_START_Y + slotIndex * CAPTURE_VERTICAL_SPACING;
-    
-    if (isWhitePiece) {
-        // White pieces captured go on the right side
-        x = isPawn ? WHITE_CAPTURE_COL2_X : WHITE_CAPTURE_COL1_X;
-    } else {
-        // Black pieces captured go on the left side
-        x = isPawn ? BLACK_CAPTURE_COL2_X : BLACK_CAPTURE_COL1_X;
+static bool isPawnSlot(StartingSlot slot) {
+    return slot >= SLOT_PAWN_A;
+}
+
+static int captureRowIndexForSlot(StartingSlot slot) {
+    switch (slot) {
+        case SLOT_PAWN_A:   return 0;  // P1
+        case SLOT_ROOK_A:   return 0;  // R1
+        case SLOT_PAWN_B:   return 1;  // P2
+        case SLOT_ROOK_H:   return 1;  // R2
+        case SLOT_PAWN_C:   return 2;  // P3
+        case SLOT_KNIGHT_B: return 2;  // N1
+        case SLOT_PAWN_D:   return 3;  // P4
+        case SLOT_KNIGHT_G: return 3;  // N2
+        case SLOT_PAWN_E:   return 4;  // P5
+        case SLOT_BISHOP_C: return 4;  // B1
+        case SLOT_PAWN_F:   return 5;  // P6
+        case SLOT_BISHOP_F: return 5;  // B2
+        case SLOT_PAWN_G:   return 6;  // P7
+        case SLOT_QUEEN_D:  return 6;  // Q
+        case SLOT_PAWN_H:   return 7;  // P8
+        case SLOT_KING_E:   return 7;  // K
     }
-    
+
+    return 0;
+}
+
+Position getCapturePosition(bool isWhitePiece, StartingSlot slot) {
+    const bool pawnSlot = isPawnSlot(slot);
+    const int rowIndex = captureRowIndexForSlot(slot);
+    const double y = CAPTURE_START_Y + rowIndex * CAPTURE_VERTICAL_SPACING;
+
+    double x;
+    if (isWhitePiece) {
+        // White storage is to the right of file h: inner column is back-rank
+        // pieces, outer column is pawns.
+        x = pawnSlot ? WHITE_CAPTURE_COL2_X : WHITE_CAPTURE_COL1_X;
+    } else {
+        // Black storage is to the left of file a: outer column is pawns,
+        // inner column is back-rank pieces.
+        x = pawnSlot ? BLACK_CAPTURE_COL2_X : BLACK_CAPTURE_COL1_X;
+    }
+
     return Position(x, y);
 }
 
 Position getStartingSlotPosition(bool isWhitePiece, StartingSlot slot) {
-    bool isPawn = (slot >= SLOT_PAWN_A);
-    int slotIndex = isPawn ? (slot - SLOT_PAWN_A) : static_cast<int>(slot);
-    return getCapturePosition(isWhitePiece, isPawn, slotIndex);
+    return getCapturePosition(isWhitePiece, slot);
 }
 
 BoardCoord getStartingSquare(bool isWhite, StartingSlot slot) {
