@@ -50,9 +50,14 @@ constexpr double BOARD_SIZE = 12.0;
 constexpr double SQUARE_SIZE = 1.5;
 constexpr double BOARD_MARGIN = 3.0;
 
-// Square a1 center position
-constexpr double A1_CENTER_X = BOARD_MARGIN + (SQUARE_SIZE / 2.0);  // 4.0"
-constexpr double A1_CENTER_Y = BOARD_MARGIN + (SQUARE_SIZE / 2.0);  // 4.0"
+// Calibrated square-center origin for the physical board.
+// Measurements supplied from the current frame reference:
+//   a1 = (6.000, 6.125)
+//   a2 = (7.500, 6.125)
+//   b1 = (6.000, 7.625)
+// This means ranks advance along +X and files advance along +Y.
+constexpr double A1_CENTER_X = 6.000;
+constexpr double A1_CENTER_Y = 6.125;
 
 /************ Capture Zone Layout ************/
 // 2" vertical spacing (matches board), 1.5" horizontal spacing (two columns)

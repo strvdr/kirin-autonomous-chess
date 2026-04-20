@@ -39,15 +39,18 @@ namespace Gantry {
 Position toPhysical(const BoardCoord& coord) {
     // BoardCoord: row 0 = rank 8, row 7 = rank 1
     //             col 0 = file a, col 7 = file h
-    // Physical:   a1 is at (4.0, 4.0), h8 is at (18.0, 18.0)
-    double x = A1_CENTER_X + coord.col * SQUARE_SIZE;
-    double y = A1_CENTER_Y + (7 - coord.row) * SQUARE_SIZE;
+    // Physical:   calibrated board has:
+    //             - ranks increasing along +X
+    //             - files increasing along +Y
+    //             - a1 centered at (A1_CENTER_X, A1_CENTER_Y)
+    double x = A1_CENTER_X + (7 - coord.row) * SQUARE_SIZE;
+    double y = A1_CENTER_Y + coord.col * SQUARE_SIZE;
     return Position(x, y);
 }
 
 BoardCoord fromPhysical(const Position& pos) {
-    int col = static_cast<int>((pos.x - A1_CENTER_X + SQUARE_SIZE / 2.0) / SQUARE_SIZE);
-    int row = 7 - static_cast<int>((pos.y - A1_CENTER_Y + SQUARE_SIZE / 2.0) / SQUARE_SIZE);
+    int row = 7 - static_cast<int>((pos.x - A1_CENTER_X + SQUARE_SIZE / 2.0) / SQUARE_SIZE);
+    int col = static_cast<int>((pos.y - A1_CENTER_Y + SQUARE_SIZE / 2.0) / SQUARE_SIZE);
     
     // Clamp to valid range
     if (col < 0) col = 0;
