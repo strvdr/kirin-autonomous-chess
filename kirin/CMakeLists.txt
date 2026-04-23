@@ -95,6 +95,7 @@ set(ENGINE_HEADERS
 set(HARDWARE_SOURCES
     src/hardware/board_interpreter.cpp
     src/hardware/board_scanner.cpp
+    src/hardware/button_controller.cpp
     src/hardware/display_controller.cpp
     src/hardware/gantry_controller.cpp
     src/hardware/game_controller.cpp
@@ -103,6 +104,7 @@ set(HARDWARE_SOURCES
 set(HARDWARE_HEADERS
     src/hardware/board_interpreter.h
     src/hardware/board_scanner.h
+    src/hardware/button_controller.h
     src/hardware/display_controller.h
     src/hardware/gantry_controller.h
     src/hardware/game_controller.h

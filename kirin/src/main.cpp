@@ -49,6 +49,13 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
+#include <chrono>
+
+#ifdef __linux__
+#include <sys/select.h>
+#include <unistd.h>
+#endif
 
 // Engine includes
 #include "engine.h"
@@ -56,6 +63,7 @@
 // Hardware includes  
 #include "game_controller.h"
 #include "display_controller.h"
+#include "button_controller.h"
 
 /************ Run Mode ************/
 enum RunMode {
@@ -72,9 +80,25 @@ void runPhysicalMode(const char* port);
 void runSimulationMode();
 void runDryRunMode(int maxMoves, int searchDepth);
 void runOledTestMode();
-static void runSensorGameLoop(GameController& controller, bool engineWhite);
-static bool promptForBoardRecovery(GameController& controller);
-static bool finalizePhysicalEngineMove(GameController& controller, int engineMove);
+static void runSensorGameLoop(GameController& controller, bool engineWhite, DisplayController* display);
+static bool promptForBoardRecovery(GameController& controller, DisplayController* display);
+static bool finalizePhysicalEngineMove(GameController& controller, int engineMove, DisplayController* display);
+static std::string moveToUciString(int move);
+static void showDisplay(DisplayController* display, DisplayStatus status,
+                        const std::string& detail = "",
+                        const std::string& line2 = "",
+                        const std::string& line3 = "");
+static bool readPhysicalInput(char* input, int size,
+                              ButtonController* buttons,
+                              DisplayController* display,
+                              GameController& controller,
+                              bool& shouldQuit);
+static bool handleIdleButton(ButtonEvent event,
+                             DisplayController* display,
+                             GameController& controller,
+                             char* command,
+                             int commandSize,
+                             bool& shouldQuit);
 
 
 
@@ -139,7 +163,128 @@ void runOledTestMode() {
 // This is the core play experience: the human makes moves by physically
 // moving pieces on the board, detected via hall effect sensors. The engine
 // responds by moving pieces via the gantry.
-static bool promptForBoardRecovery(GameController& controller) {
+static std::string moveToUciString(int move) {
+    if (!move) return "";
+
+    int source = getSource(move);
+    int target = getTarget(move);
+    char buf[6];
+    buf[0] = 'a' + (source % 8);
+    buf[1] = '8' - (source / 8);
+    buf[2] = 'a' + (target % 8);
+    buf[3] = '8' - (target / 8);
+    if (getPromoted(move)) {
+        int promo = getPromoted(move) % 6;
+        const char promoChars[] = "pnbrqk";
+        buf[4] = promoChars[promo];
+        buf[5] = '\0';
+    } else {
+        buf[4] = '\0';
+    }
+    return std::string(buf);
+}
+
+static void showDisplay(DisplayController* display, DisplayStatus status,
+                        const std::string& detail,
+                        const std::string& line2,
+                        const std::string& line3) {
+    if (display && display->isReady()) {
+        display->showStatus(status, detail, line2, line3);
+    }
+}
+
+static bool handleIdleButton(ButtonEvent event,
+                             DisplayController* display,
+                             GameController& controller,
+                             char* command,
+                             int commandSize,
+                             bool& shouldQuit) {
+    if (event == ButtonEvent::None) return false;
+
+    switch (event) {
+        case ButtonEvent::Start:
+            if (controller.isGameInProgress()) {
+                snprintf(command, commandSize, "go");
+                showDisplay(display, DisplayStatus::EngineThinking, "Start button", "go");
+                printf("\n[BUTTONS] Start pressed -> go\n");
+            } else {
+                snprintf(command, commandSize, "play white");
+                showDisplay(display, DisplayStatus::Booting, "Start button", "play white");
+                printf("\n[BUTTONS] Start pressed -> play white\n");
+            }
+            return true;
+
+        case ButtonEvent::Stop:
+            if (controller.isGameInProgress()) {
+                controller.stopGame();
+                showDisplay(display, DisplayStatus::Idle, "Stop pressed", "Game stopped");
+                printf("\n[BUTTONS] Stop pressed -> stop game\n");
+            } else {
+                shouldQuit = true;
+                showDisplay(display, DisplayStatus::Idle, "Stop pressed", "Exiting");
+                printf("\n[BUTTONS] Stop pressed -> exit physical mode\n");
+            }
+            return true;
+
+        case ButtonEvent::Reset:
+            snprintf(command, commandSize, "home");
+            showDisplay(display, DisplayStatus::Booting, "Reset button", "Homing");
+            printf("\n[BUTTONS] Reset pressed -> home\n");
+            return true;
+
+        case ButtonEvent::None:
+            return false;
+    }
+
+    return false;
+}
+
+static bool readPhysicalInput(char* input, int size,
+                              ButtonController* buttons,
+                              DisplayController* display,
+                              GameController& controller,
+                              bool& shouldQuit) {
+    while (true) {
+        if (buttons && buttons->isInitialized()) {
+            ButtonEvent event = buttons->poll();
+            if (handleIdleButton(event, display, controller, input, size, shouldQuit)) {
+                return true;
+            }
+        }
+
+#ifdef __linux__
+        fd_set readfds;
+        FD_ZERO(&readfds);
+        FD_SET(STDIN_FILENO, &readfds);
+
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000;
+
+        int ret = select(STDIN_FILENO + 1, &readfds, nullptr, nullptr, &tv);
+        if (ret > 0 && FD_ISSET(STDIN_FILENO, &readfds)) {
+            if (fgets(input, size, stdin) == nullptr) {
+                return false;
+            }
+            input[strcspn(input, "\n")] = 0;
+            return true;
+        }
+        if (ret < 0) {
+            return false;
+        }
+#else
+        if (fgets(input, size, stdin) == nullptr) {
+            return false;
+        }
+        input[strcspn(input, "\n")] = 0;
+        return true;
+#endif
+    }
+}
+
+static bool promptForBoardRecovery(GameController& controller, DisplayController* display) {
+    showDisplay(display, DisplayStatus::IllegalBoardState,
+                "Fix board", "Type continue", "or abort");
     printf("Board state mismatch after engine move.\n");
     printf("Please fix the board and type 'continue' or 'abort'.\n");
 
@@ -155,10 +300,12 @@ static bool promptForBoardRecovery(GameController& controller) {
         response[strcspn(response, "\n")] = 0;
         if (strcmp(response, "continue") == 0) {
             controller.syncWithEngine();
+            showDisplay(display, DisplayStatus::HardwareReady, "Board resynced");
             return true;
         }
         if (strcmp(response, "abort") == 0) {
             controller.stopGame();
+            showDisplay(display, DisplayStatus::Idle, "Game aborted");
             return false;
         }
 
@@ -166,19 +313,19 @@ static bool promptForBoardRecovery(GameController& controller) {
     }
 }
 
-static bool finalizePhysicalEngineMove(GameController& controller, int engineMove) {
+static bool finalizePhysicalEngineMove(GameController& controller, int engineMove, DisplayController* display) {
     makeMove(engineMove, allMoves);
     controller.updateTracker(engineMove);
     controller.syncWithEngine();
 
     if (controller.isScannerReady() && !controller.verifyBoardState()) {
-        return promptForBoardRecovery(controller);
+        return promptForBoardRecovery(controller, display);
     }
 
     return true;
 }
 
-static void runSensorGameLoop(GameController& controller, bool engineWhite) {
+static void runSensorGameLoop(GameController& controller, bool engineWhite, DisplayController* display) {
     printf("\n");
     printf("══════════════════════════════════════════════════════════════\n");
     printf("  GAME IN PROGRESS — %s vs %s\n",
@@ -191,6 +338,9 @@ static void runSensorGameLoop(GameController& controller, bool engineWhite) {
     printf("\n");
 
     int moveNumber = 1;
+    showDisplay(display, DisplayStatus::HardwareReady,
+                engineWhite ? "Engine white" : "Human white",
+                "Game active");
 
     while (controller.isGameInProgress()) {
         // Check for game over
@@ -203,8 +353,12 @@ static void runSensorGameLoop(GameController& controller, bool engineWhite) {
             );
             if (inCheck) {
                 printf("  CHECKMATE — %s wins!\n", side == white ? "Black" : "White");
+                showDisplay(display, DisplayStatus::GameOver,
+                            side == white ? "Black wins" : "White wins",
+                            "Checkmate");
             } else {
                 printf("  STALEMATE — Draw!\n");
+                showDisplay(display, DisplayStatus::GameOver, "Draw", "Stalemate");
             }
             printf("══════════════════════════════════════════════════════════════\n");
             controller.stopGame();
@@ -215,12 +369,16 @@ static void runSensorGameLoop(GameController& controller, bool engineWhite) {
             // Engine's turn — search and execute
             printf("\nMove %d%s — Engine thinking...\n",
                    moveNumber, (side == white) ? "." : "...");
+            showDisplay(display, DisplayStatus::EngineThinking,
+                        side == white ? "White to move" : "Black to move",
+                        "Searching...");
 
             searchPosition(6);
 
             extern int bestMove;
             if (!bestMove) {
                 printf("No legal moves — game over!\n");
+                showDisplay(display, DisplayStatus::GameOver, "No legal moves");
                 controller.stopGame();
                 break;
             }
@@ -237,22 +395,34 @@ static void runSensorGameLoop(GameController& controller, bool engineWhite) {
                 printf("%c", promoChars[promo]);
             }
             printf("\n");
+            std::string engineMoveStr = moveToUciString(bestMove);
+            showDisplay(display, DisplayStatus::ExecutingMove,
+                        "Engine: " + engineMoveStr,
+                        "Gantry moving");
 
             // Execute on physical board (gantry moves the piece)
             if (!controller.executeEngineMove(bestMove)) {
                 printf("HARDWARE ERROR executing engine move! Aborting game.\n");
+                showDisplay(display, DisplayStatus::IllegalBoardState,
+                            "Hardware error", "Engine move");
                 controller.stopGame();
                 break;
             }
 
-            if (!finalizePhysicalEngineMove(controller, bestMove)) {
+            if (!finalizePhysicalEngineMove(controller, bestMove, display)) {
                 if (!controller.isGameInProgress()) {
                     break;
                 }
                 printf("Board recovery failed after engine move.\n");
+                showDisplay(display, DisplayStatus::IllegalBoardState,
+                            "Recovery failed");
                 controller.stopGame();
                 break;
             }
+
+            showDisplay(display, DisplayStatus::HardwareReady,
+                        "Engine: " + engineMoveStr,
+                        side == white ? "White to move" : "Black to move");
 
             printBoard();
 
@@ -264,18 +434,29 @@ static void runSensorGameLoop(GameController& controller, bool engineWhite) {
             // Human's turn — wait for sensor input
             printf("\nMove %d%s — Your turn. Make your move on the board.\n",
                    moveNumber, (side == white) ? "." : "...");
+            showDisplay(display, DisplayStatus::WaitingForHuman,
+                        side == white ? "White to move" : "Black to move",
+                        "Move piece");
 
             int humanMove = 0;
             if (!controller.waitForHumanMove(humanMove)) {
                 printf("Move detection failed or timed out.\n");
+                showDisplay(display, DisplayStatus::IllegalBoardState,
+                            "Detection failed", "Try again");
                 continue;
             }
+            std::string humanMoveStr = moveToUciString(humanMove);
+            showDisplay(display, DisplayStatus::HardwareReady,
+                        "Human: " + humanMoveStr,
+                        "Move detected");
 
             // Make the move in the engine
             if (!makeMove(humanMove, allMoves)) {
                 // This shouldn't happen since waitForHumanMove validated it,
                 // but handle it defensively
                 printf("Engine rejected the detected move — this is a bug.\n");
+                showDisplay(display, DisplayStatus::IllegalBoardState,
+                            "Engine rejected", humanMoveStr);
                 continue;
             }
 
@@ -307,47 +488,80 @@ void runPhysicalMode(const char* port) {
     printf("\n");
     
     GameController controller;
+    DisplayController display;
+    DisplayController* displayPtr = nullptr;
+    ButtonController buttons;
+    ButtonController* buttonsPtr = nullptr;
+
+    if (display.init()) {
+        displayPtr = &display;
+        showDisplay(displayPtr, DisplayStatus::Booting, "Physical mode");
+    } else {
+        printf("[DISPLAY] OLED unavailable; continuing without display.\n");
+    }
+
+    if (buttons.init()) {
+        buttonsPtr = &buttons;
+        printf("[BUTTONS] Start=GPIO%d Stop=GPIO%d Reset=GPIO%d\n",
+               DEFAULT_PIN_BUTTON_START, DEFAULT_PIN_BUTTON_STOP, DEFAULT_PIN_BUTTON_RESET);
+    } else {
+        printf("[BUTTONS] Buttons unavailable; continuing with terminal commands only.\n");
+    }
     
     // Connect to hardware
     printf("Connecting to gantry on %s...\n", port);
+    showDisplay(displayPtr, DisplayStatus::Booting, "Connecting gantry");
     if (!controller.connectHardware(port)) {
         printf("Failed to connect. Check port and try again.\n");
+        showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                    "Gantry connect", "failed");
         return;
     }
     
     // Initialize the board scanner
     printf("Initializing board scanner...\n");
+    showDisplay(displayPtr, DisplayStatus::Booting, "Init scanner");
     if (!controller.initScanner()) {
         printf("Warning: Scanner initialization failed.\n");
         printf("  Sensor-based move detection will not be available.\n");
         printf("  You can still use 'move' to type moves manually.\n");
+        showDisplay(displayPtr, DisplayStatus::HardwareReady,
+                    "Scanner failed", "Manual moves ok");
+    } else {
+        showDisplay(displayPtr, DisplayStatus::HardwareReady, "Scanner OK");
     }
     
     // Home the gantry
     printf("Homing gantry...\n");
+    showDisplay(displayPtr, DisplayStatus::Booting, "Homing gantry");
     if (!controller.homeGantry()) {
         printf("Homing failed. Check hardware and try again.\n");
+        showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                    "Homing failed");
         return;
     }
+    showDisplay(displayPtr, DisplayStatus::Idle, "Ready", "Type command");
     
     // Main command loop
     char input[256];
+    bool shouldQuit = false;
     printf("\nReady. Type 'help' for commands.\n\n");
     
-    while (true) {
+    while (!shouldQuit) {
         printf("kirin> ");
         fflush(stdout);
         
-        if (fgets(input, sizeof(input), stdin) == nullptr) {
+        if (!readPhysicalInput(input, sizeof(input), buttonsPtr, displayPtr, controller, shouldQuit)) {
             break;
         }
-        
-        // Remove newline
-        input[strcspn(input, "\n")] = 0;
+        if (shouldQuit) {
+            break;
+        }
         
         // Parse command
         if (strcmp(input, "quit") == 0 || strcmp(input, "exit") == 0) {
             printf("Goodbye!\n");
+            showDisplay(displayPtr, DisplayStatus::Idle, "Goodbye");
             break;
         }
         else if (strcmp(input, "help") == 0) {
@@ -365,6 +579,10 @@ void runPhysicalMode(const char* port) {
             printf("  home                   - Home the gantry\n");
             printf("  test                   - Run hardware test sequence\n");
             printf("  quit                   - Exit program\n");
+            printf("\nButtons at safe command prompts:\n");
+            printf("  Start: play white if idle, go if game active\n");
+            printf("  Stop:  stop active game, exit if idle\n");
+            printf("  Reset: home gantry\n");
             printf("\n");
         }
         else if (strncmp(input, "play", 4) == 0) {
@@ -373,6 +591,8 @@ void runPhysicalMode(const char* port) {
                 printf("Error: Board scanner not initialized.\n");
                 printf("  Sensor-based play requires working hall effect sensors.\n");
                 printf("  Use 'newgame' for manual move entry instead.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Scanner needed", "Use newgame");
                 continue;
             }
 
@@ -380,6 +600,8 @@ void runPhysicalMode(const char* port) {
                 printf("Error: Sensor-based play requires exact piece identity tracking.\n");
                 printf("  The current position does not have trusted tracker state.\n");
                 printf("  Start a new game or use 'newgame' for manual move entry.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Tracker unknown", "Start new game");
                 continue;
             }
             
@@ -390,6 +612,8 @@ void runPhysicalMode(const char* port) {
             
             printf("Setting up new game (engine plays %s)...\n",
                    engineWhite ? "white" : "black");
+            showDisplay(displayPtr, DisplayStatus::Booting,
+                        "Setting up", engineWhite ? "Engine white" : "Engine black");
             
             // Reset engine
             parseFEN(startPosition);
@@ -397,6 +621,8 @@ void runPhysicalMode(const char* port) {
             // Set up physical board
             if (!controller.setupNewGame()) {
                 printf("Failed to set up board.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Setup failed");
                 continue;
             }
             
@@ -406,6 +632,8 @@ void runPhysicalMode(const char* port) {
             if (!controller.verifyBoardState()) {
                 printf("Board does not match starting position after setup.\n");
                 printf("Please fix piece placement and try 'play' again.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Setup mismatch", "Fix pieces");
                 controller.stopGame();
                 continue;
             }
@@ -413,7 +641,8 @@ void runPhysicalMode(const char* port) {
             printBoard();
             
             // Run the sensor-based game loop
-            runSensorGameLoop(controller, engineWhite);
+            runSensorGameLoop(controller, engineWhite, displayPtr);
+            showDisplay(displayPtr, DisplayStatus::Idle, "Game ended");
         }
         else if (strncmp(input, "newgame", 7) == 0) {
             // Manual-entry game (legacy / fallback)
@@ -424,6 +653,8 @@ void runPhysicalMode(const char* port) {
             
             printf("Setting up new game (engine plays %s)...\n", 
                    engineWhite ? "white" : "black");
+            showDisplay(displayPtr, DisplayStatus::Booting,
+                        "Manual game", engineWhite ? "Engine white" : "Engine black");
             
             // Reset engine to starting position
             parseFEN(startPosition);
@@ -431,6 +662,8 @@ void runPhysicalMode(const char* port) {
             // Set up physical board
             if (!controller.setupNewGame()) {
                 printf("Failed to set up board.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Setup failed");
                 continue;
             }
             
@@ -439,6 +672,11 @@ void runPhysicalMode(const char* port) {
             // Verify setup if scanner is available
             if (controller.isScannerReady() && !controller.verifyBoardState()) {
                 printf("Warning: Board does not match starting position.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Board mismatch", "Manual mode");
+            } else {
+                showDisplay(displayPtr, DisplayStatus::HardwareReady,
+                            "Manual game", engineWhite ? "Engine white" : "Human white");
             }
             
             printBoard();
@@ -449,6 +687,8 @@ void runPhysicalMode(const char* port) {
             // If engine plays white, make first move
             if (engineWhite) {
                 printf("Engine thinking...\n");
+                showDisplay(displayPtr, DisplayStatus::EngineThinking,
+                            "Opening move");
                 searchPosition(6);  // depth 6
                 
                 // Get best move from search
@@ -456,7 +696,10 @@ void runPhysicalMode(const char* port) {
                 if (bestMove) {
                     // Execute on physical board FIRST
                     if (controller.executeEngineMove(bestMove)) {
-                        if (!finalizePhysicalEngineMove(controller, bestMove)) {
+                        showDisplay(displayPtr, DisplayStatus::ExecutingMove,
+                                    "Engine: " + moveToUciString(bestMove),
+                                    "Gantry moving");
+                        if (!finalizePhysicalEngineMove(controller, bestMove, displayPtr)) {
                             printf("Board recovery failed after engine move.\n");
                             continue;
                         }
@@ -468,8 +711,12 @@ void runPhysicalMode(const char* port) {
                                'a' + (source % 8), 8 - (source / 8),
                                'a' + (target % 8), 8 - (target / 8));
                         printBoard();
+                        showDisplay(displayPtr, DisplayStatus::WaitingForHuman,
+                                    "Human to move", "Type move");
                     } else {
                         printf("Hardware error executing move!\n");
+                        showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                                    "Hardware error");
                     }
                 }
             }
@@ -484,18 +731,27 @@ void runPhysicalMode(const char* port) {
             int move = parseMove(moveStr);
             if (move == 0) {
                 printf("Invalid or illegal move: %s\n", moveStr);
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Invalid move", moveStr);
                 continue;
             }
             
             // Execute on physical board FIRST (before advancing engine state)
+            showDisplay(displayPtr, DisplayStatus::ExecutingMove,
+                        "Manual: " + moveToUciString(move),
+                        "Gantry moving");
             if (!controller.executeEngineMove(move)) {
                 printf("Hardware error executing move! Board state unchanged.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Hardware error", "Manual move");
                 continue;
             }
             
             // Hardware succeeded — now advance the engine state
             if (!makeMove(move, allMoves)) {
                 printf("Illegal move: %s\n", moveStr);
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Illegal move", moveStr);
                 continue;
             }
             
@@ -508,18 +764,23 @@ void runPhysicalMode(const char* port) {
             // Check for game over
             if (controller.isGameOver()) {
                 printf("\nGame over!\n");
+                showDisplay(displayPtr, DisplayStatus::GameOver, "Game over");
                 continue;
             }
             
             // Engine responds
             printf("Engine thinking...\n");
+            showDisplay(displayPtr, DisplayStatus::EngineThinking, "Engine turn");
             searchPosition(6);
             
             extern int bestMove;
             if (bestMove) {
                 // Execute on hardware FIRST
                 if (controller.executeEngineMove(bestMove)) {
-                    if (!finalizePhysicalEngineMove(controller, bestMove)) {
+                    showDisplay(displayPtr, DisplayStatus::ExecutingMove,
+                                "Engine: " + moveToUciString(bestMove),
+                                "Gantry moving");
+                    if (!finalizePhysicalEngineMove(controller, bestMove, displayPtr)) {
                         printf("Board recovery failed after engine move.\n");
                         continue;
                     }
@@ -540,23 +801,34 @@ void runPhysicalMode(const char* port) {
                     
                     if (controller.isGameOver()) {
                         printf("\nGame over!\n");
+                        showDisplay(displayPtr, DisplayStatus::GameOver, "Game over");
+                    } else {
+                        showDisplay(displayPtr, DisplayStatus::WaitingForHuman,
+                                    "Human to move", "Type move");
                     }
                 } else {
                     printf("Hardware error executing engine move!\n");
+                    showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                                "Hardware error", "Engine move");
                 }
             } else {
                 printf("No legal moves - game over!\n");
+                showDisplay(displayPtr, DisplayStatus::GameOver, "No legal moves");
             }
         }
         else if (strcmp(input, "go") == 0) {
             printf("Engine thinking...\n");
+            showDisplay(displayPtr, DisplayStatus::EngineThinking, "Engine turn");
             searchPosition(6);
             
             extern int bestMove;
             if (bestMove) {
                 // Execute on hardware FIRST
                 if (controller.executeEngineMove(bestMove)) {
-                    if (!finalizePhysicalEngineMove(controller, bestMove)) {
+                    showDisplay(displayPtr, DisplayStatus::ExecutingMove,
+                                "Engine: " + moveToUciString(bestMove),
+                                "Gantry moving");
+                    if (!finalizePhysicalEngineMove(controller, bestMove, displayPtr)) {
                         printf("Board recovery failed after engine move.\n");
                         continue;
                     }
@@ -568,11 +840,16 @@ void runPhysicalMode(const char* port) {
                            'a' + (source % 8), 8 - (source / 8),
                            'a' + (target % 8), 8 - (target / 8));
                     printBoard();
+                    showDisplay(displayPtr, DisplayStatus::HardwareReady,
+                                "Engine: " + moveToUciString(bestMove));
                 } else {
                     printf("Hardware error! Engine state unchanged.\n");
+                    showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                                "Hardware error");
                 }
             } else {
                 printf("No legal moves!\n");
+                showDisplay(displayPtr, DisplayStatus::GameOver, "No legal moves");
             }
         }
         else if (strcmp(input, "board") == 0) {
@@ -584,8 +861,12 @@ void runPhysicalMode(const char* port) {
         else if (strcmp(input, "scan") == 0) {
             if (!controller.isScannerReady()) {
                 printf("Scanner not initialized.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Scanner offline");
                 continue;
             }
+            showDisplay(displayPtr, DisplayStatus::HardwareReady,
+                        "Scanning board");
             BoardScanner& scanner = controller.getScanner();
             Bitboard boardScan = scanner.scanBoardDebounced();
             scanner.printScan(boardScan);
@@ -598,9 +879,14 @@ void runPhysicalMode(const char* port) {
         else if (strcmp(input, "diag") == 0) {
             if (!controller.isScannerReady()) {
                 printf("Scanner not initialized.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Scanner offline");
                 continue;
             }
+            showDisplay(displayPtr, DisplayStatus::HardwareReady,
+                        "Sensor diag", "Running...");
             controller.getScanner().diagnosticScan();
+            showDisplay(displayPtr, DisplayStatus::Idle, "Diag done");
         }
         else if (strncmp(input, "fen ", 4) == 0) {
             const char* fen = input + 4;
@@ -608,20 +894,28 @@ void runPhysicalMode(const char* port) {
             parseFEN(fen);
             controller.invalidateTracker();
             controller.syncWithEngine();
+            showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                        "Tracker unknown", "New game needed");
             printf("Tracker state marked unknown for arbitrary FEN.\n");
             printf("  Sensor-based play is disabled until a new game is started.\n");
             printBoard();
         }
         else if (strcmp(input, "home") == 0) {
             printf("Homing gantry...\n");
+            showDisplay(displayPtr, DisplayStatus::Booting, "Homing gantry");
             if (controller.homeGantry()) {
                 printf("Done.\n");
+                showDisplay(displayPtr, DisplayStatus::Idle, "Homing done");
             } else {
                 printf("Homing failed.\n");
+                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
+                            "Homing failed");
             }
         }
         else if (strcmp(input, "test") == 0) {
             printf("Running hardware test...\n");
+            showDisplay(displayPtr, DisplayStatus::ExecutingMove,
+                        "Hardware test");
             Gantry::GrblController& gantry = controller.getGantry();
             
             // Move to center of board
