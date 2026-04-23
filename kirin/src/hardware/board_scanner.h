@@ -24,13 +24,13 @@
 *    6x CD74HC4067 (or equivalent) 16:1 digital mux:
 *
 *      Board sensors (64 total, one per square):
-*        MUX 0: ranks 8-7  (rows 0-1, squares a8-h7)  → 16 sensors
-*        MUX 1: ranks 6-5  (rows 2-3, squares a6-h5)  → 16 sensors
-*        MUX 2: ranks 4-3  (rows 4-5, squares a4-h3)  → 16 sensors
-*        MUX 3: ranks 2-1  (rows 6-7, squares a2-h1)  → 16 sensors
+*        MUX 1: files a-b  → 16 sensors
+*        MUX 2: files c-d  → 16 sensors
+*        MUX 3: files e-f  → 16 sensors
+*        MUX 4: files g-h  → 16 sensors
 *
 *      Storage zone sensors (32 total, 16 per side):
-*        MUX 4: black storage (left side of board)     → 16 sensors
+*        MUX 0: black storage (assumed left side)      → 16 sensors
 *        MUX 5: white storage (right side of board)    → 16 sensors
 *
 *      Each storage mux has 16 channels mapped to slots:
@@ -43,13 +43,10 @@
 *    6 mux output lines (SIG)        → Pi GPIO, one per mux
 *
 *    Sensor mapping within each board mux (channel → square):
-*      Channel 0  = rank N, file a   (col 0)
-*      Channel 1  = rank N, file b   (col 1)
-*      ...
-*      Channel 7  = rank N, file h   (col 7)
-*      Channel 8  = rank N-1, file a (col 0)
-*      ...
-*      Channel 15 = rank N-1, file h (col 7)
+*      For mux 1 (files a-b):
+*        Channel 0  = a8, 1 = a7, ..., 7 = a1
+*        Channel 8  = b8, 9 = b7, ..., 15 = b1
+*      The same pattern repeats for muxes 2-4 covering c-d, e-f, g-h.
 *
 *    A3144 sensor output:
 *      LOW  = magnet detected (piece present)
@@ -75,11 +72,11 @@ constexpr int DEFAULT_PIN_S2 = 22;
 constexpr int DEFAULT_PIN_S3 = 23;
 
 // Mux signal output pins (active-low: LOW = piece present):
-constexpr int DEFAULT_PIN_MUX0 = 5;   // Ranks 8-7
-constexpr int DEFAULT_PIN_MUX1 = 6;   // Ranks 6-5
-constexpr int DEFAULT_PIN_MUX2 = 13;  // Ranks 4-3
-constexpr int DEFAULT_PIN_MUX3 = 19;  // Ranks 2-1
-constexpr int DEFAULT_PIN_MUX4 = 26;  // Black storage zone
+constexpr int DEFAULT_PIN_MUX0 = 5;   // Black storage zone
+constexpr int DEFAULT_PIN_MUX1 = 6;   // Board files a-b
+constexpr int DEFAULT_PIN_MUX2 = 13;  // Board files c-d
+constexpr int DEFAULT_PIN_MUX3 = 19;  // Board files e-f
+constexpr int DEFAULT_PIN_MUX4 = 26;  // Board files g-h
 constexpr int DEFAULT_PIN_MUX5 = 16;  // White storage zone
 
 /************ Scanning Parameters ************/
@@ -162,11 +159,11 @@ private:
     bool readMuxOutput(int muxIndex);
 
     /**
-     * Map a (mux index, channel) pair to a bitboard square index.
+     * Map a physical board mux/channel pair to a bitboard square index.
      *
-     * Mux 0, channel 0  → square 0  (a8)
-     * Mux 0, channel 15 → square 15 (h7)
-     * Mux 3, channel 15 → square 63 (h1)
+     * Mux 1, channel 0  → square 0  (a8)
+     * Mux 1, channel 15 → square 57 (b1)
+     * Mux 4, channel 15 → square 63 (h1)
      */
     int toSquareIndex(int muxIndex, int channel);
 
@@ -265,7 +262,7 @@ public:
     /**
      * Scan one side's storage zone (16 slots).
      *
-     * @param isWhiteSide  true for white storage (MUX 5), false for black (MUX 4)
+     * @param isWhiteSide  true for white storage (MUX 5), false for black (MUX 0)
      * @return 16-bit bitmask of occupied slots
      */
     uint16_t scanStorage(bool isWhiteSide);

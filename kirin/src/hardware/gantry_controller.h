@@ -89,26 +89,32 @@ constexpr double CAPTURE_START_Y = A1_CENTER_Y;
 constexpr double FEED_RATE = 1000.0;  // inches/min
 
 /************ Capture Zone Slots ************/
-// Exact slot identities are preserved in the tracker. The storage layout does
-// not mirror the board-file order for back-rank pieces: it uses physical bins
-// R1, R2, N1, N2, B1, B2, Q, K from bottom to top.
+// Exact slot identities are preserved in the tracker. The storage layout uses
+// fixed physical bins from top (rank 8) to bottom (rank 1):
+//   inner column: R1, R2, B1, B2, N1, N2, Q, K
+//   outer column: P1, P2, P3, P4, P5, P6, P7, P8
+// Origin mapping is:
+//   a-rook -> R1, h-rook -> R2
+//   c-bishop -> B1, f-bishop -> B2
+//   b-knight -> N1, g-knight -> N2
+//   a-pawn..h-pawn -> P1..P8
 enum StartingSlot {
-    SLOT_ROOK_A = 0,
-    SLOT_KNIGHT_B = 1,
-    SLOT_BISHOP_C = 2,
-    SLOT_QUEEN_D = 3,
-    SLOT_KING_E = 4,
-    SLOT_BISHOP_F = 5,
-    SLOT_KNIGHT_G = 6,
-    SLOT_ROOK_H = 7,
-    SLOT_PAWN_A = 8,
-    SLOT_PAWN_B = 9,
-    SLOT_PAWN_C = 10,
-    SLOT_PAWN_D = 11,
-    SLOT_PAWN_E = 12,
-    SLOT_PAWN_F = 13,
-    SLOT_PAWN_G = 14,
-    SLOT_PAWN_H = 15
+    SLOT_R1 = 0,
+    SLOT_R2 = 1,
+    SLOT_B1 = 2,
+    SLOT_B2 = 3,
+    SLOT_N1 = 4,
+    SLOT_N2 = 5,
+    SLOT_Q  = 6,
+    SLOT_K  = 7,
+    SLOT_P1 = 8,
+    SLOT_P2 = 9,
+    SLOT_P3 = 10,
+    SLOT_P4 = 11,
+    SLOT_P5 = 12,
+    SLOT_P6 = 13,
+    SLOT_P7 = 14,
+    SLOT_P8 = 15
 };
 
 /************ Physical Position ************/

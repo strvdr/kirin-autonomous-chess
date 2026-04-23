@@ -62,27 +62,27 @@ BoardCoord fromPhysical(const Position& pos) {
 }
 
 static bool isPawnSlot(StartingSlot slot) {
-    return slot >= SLOT_PAWN_A;
+    return slot >= SLOT_P1;
 }
 
 static int captureRowIndexForSlot(StartingSlot slot) {
     switch (slot) {
-        case SLOT_PAWN_A:   return 0;  // P1
-        case SLOT_ROOK_A:   return 0;  // R1
-        case SLOT_PAWN_B:   return 1;  // P2
-        case SLOT_ROOK_H:   return 1;  // R2
-        case SLOT_PAWN_C:   return 2;  // P3
-        case SLOT_KNIGHT_B: return 2;  // N1
-        case SLOT_PAWN_D:   return 3;  // P4
-        case SLOT_KNIGHT_G: return 3;  // N2
-        case SLOT_PAWN_E:   return 4;  // P5
-        case SLOT_BISHOP_C: return 4;  // B1
-        case SLOT_PAWN_F:   return 5;  // P6
-        case SLOT_BISHOP_F: return 5;  // B2
-        case SLOT_PAWN_G:   return 6;  // P7
-        case SLOT_QUEEN_D:  return 6;  // Q
-        case SLOT_PAWN_H:   return 7;  // P8
-        case SLOT_KING_E:   return 7;  // K
+        case SLOT_R1:
+        case SLOT_P1: return 0;
+        case SLOT_R2:
+        case SLOT_P2: return 1;
+        case SLOT_B1:
+        case SLOT_P3: return 2;
+        case SLOT_B2:
+        case SLOT_P4: return 3;
+        case SLOT_N1:
+        case SLOT_P5: return 4;
+        case SLOT_N2:
+        case SLOT_P6: return 5;
+        case SLOT_Q:
+        case SLOT_P7: return 6;
+        case SLOT_K:
+        case SLOT_P8: return 7;
     }
 
     return 0;
@@ -112,15 +112,28 @@ Position getStartingSlotPosition(bool isWhitePiece, StartingSlot slot) {
 }
 
 BoardCoord getStartingSquare(bool isWhite, StartingSlot slot) {
-    int col = (slot >= SLOT_PAWN_A) ? (slot - SLOT_PAWN_A) : static_cast<int>(slot);
-    int row;
-    
-    if (isWhite) {
-        row = (slot >= SLOT_PAWN_A) ? 6 : 7;  // rank 2 or rank 1
-    } else {
-        row = (slot >= SLOT_PAWN_A) ? 1 : 0;  // rank 7 or rank 8
+    int row = isWhite ? 7 : 0;
+    int col = 0;
+
+    switch (slot) {
+        case SLOT_R1: col = 0; break;
+        case SLOT_R2: col = 7; break;
+        case SLOT_B1: col = 2; break;
+        case SLOT_B2: col = 5; break;
+        case SLOT_N1: col = 1; break;
+        case SLOT_N2: col = 6; break;
+        case SLOT_Q:  col = 3; break;
+        case SLOT_K:  col = 4; break;
+        case SLOT_P1: row = isWhite ? 6 : 1; col = 0; break;
+        case SLOT_P2: row = isWhite ? 6 : 1; col = 1; break;
+        case SLOT_P3: row = isWhite ? 6 : 1; col = 2; break;
+        case SLOT_P4: row = isWhite ? 6 : 1; col = 3; break;
+        case SLOT_P5: row = isWhite ? 6 : 1; col = 4; break;
+        case SLOT_P6: row = isWhite ? 6 : 1; col = 5; break;
+        case SLOT_P7: row = isWhite ? 6 : 1; col = 6; break;
+        case SLOT_P8: row = isWhite ? 6 : 1; col = 7; break;
     }
-    
+
     return BoardCoord(row, col);
 }
 
@@ -223,11 +236,11 @@ std::vector<std::string> generateMovePlanGcode(const MovePlan& plan,
         // Placeholder exact slot for legacy simulation paths that do not
         // currently track identity. Real hardware execution uses the
         // identity-aware GrblController::executeMove path.
-        std::vector<std::string> captureGcode = generateCaptureGcode(
-            plan.primaryMove.to,
-            capturedPieceIsWhite,
-            SLOT_PAWN_A
-        );
+            std::vector<std::string> captureGcode = generateCaptureGcode(
+                plan.primaryMove.to,
+                capturedPieceIsWhite,
+                SLOT_P1
+            );
         gcode.insert(gcode.end(), captureGcode.begin(), captureGcode.end());
     }
     

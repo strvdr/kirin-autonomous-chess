@@ -56,6 +56,14 @@ static unsigned int selectOffsets[4] = {};
 static unsigned int muxOffsets[TOTAL_MUX_COUNT] = {};
 #endif
 
+namespace {
+
+constexpr int BLACK_STORAGE_MUX = 0;
+constexpr int WHITE_STORAGE_MUX = 5;
+constexpr int BOARD_MUX_INDICES[BOARD_MUX_COUNT] = {1, 2, 3, 4};
+
+} // namespace
+
 /************ Constructor / Destructor ************/
 
 BoardScanner::BoardScanner()
@@ -222,10 +230,10 @@ bool BoardScanner::init() {
     printf("[SCANNER] GPIO initialized successfully (6 muxes: 4 board + 2 storage)\n");
     printf("  Select lines: GPIO %d, %d, %d, %d\n",
            selectPins[0], selectPins[1], selectPins[2], selectPins[3]);
-    printf("  Board muxes:  GPIO %d, %d, %d, %d\n",
-           muxPins[0], muxPins[1], muxPins[2], muxPins[3]);
-    printf("  Storage muxes: GPIO %d (black), %d (white)\n",
-           muxPins[4], muxPins[5]);
+    printf("  Board muxes:  MUX 1 GPIO %d, MUX 2 GPIO %d, MUX 3 GPIO %d, MUX 4 GPIO %d\n",
+           muxPins[1], muxPins[2], muxPins[3], muxPins[4]);
+    printf("  Storage muxes: MUX 0 GPIO %d (black), MUX 5 GPIO %d (white)\n",
+           muxPins[BLACK_STORAGE_MUX], muxPins[WHITE_STORAGE_MUX]);
 
     initialized = true;
     return true;
@@ -278,11 +286,15 @@ bool BoardScanner::readMuxOutput(int muxIndex) {
 }
 
 int BoardScanner::toSquareIndex(int muxIndex, int channel) {
-    // Mux 0 covers squares 0-15  (a8 through h7)
-    // Mux 1 covers squares 16-31 (a6 through h5)
-    // Mux 2 covers squares 32-47 (a4 through h3)
-    // Mux 3 covers squares 48-63 (a2 through h1)
-    return (muxIndex * CHANNELS_PER_MUX) + channel;
+    if (muxIndex < BOARD_MUX_INDICES[0] || muxIndex > BOARD_MUX_INDICES[BOARD_MUX_COUNT - 1] ||
+        channel < 0 || channel >= CHANNELS_PER_MUX) {
+        return -1;
+    }
+
+    const int filePair = muxIndex - BOARD_MUX_INDICES[0];
+    const int col = filePair * 2 + (channel / 8);
+    const int row = channel % 8;
+    return row * 8 + col;
 }
 
 /************ Board Scanning ************/
@@ -304,9 +316,11 @@ Bitboard BoardScanner::scanBoard() {
         setMuxChannel(channel);
 
         // Read the 4 board muxes at this channel address
-        for (int mux = 0; mux < BOARD_MUX_COUNT; mux++) {
+        for (int i = 0; i < BOARD_MUX_COUNT; i++) {
+            const int mux = BOARD_MUX_INDICES[i];
             if (readMuxOutput(mux)) {
                 int square = toSquareIndex(mux, channel);
+                if (square < 0) continue;
                 result |= (1ULL << square);
             }
         }
@@ -347,8 +361,8 @@ uint16_t BoardScanner::scanStorage(bool isWhiteSide) {
         return isWhiteSide ? simulatedWhiteStorage : simulatedBlackStorage;
     }
 
-    // MUX 4 = black storage, MUX 5 = white storage
-    int muxIndex = isWhiteSide ? 5 : 4;
+    // MUX 0 = black storage, MUX 5 = white storage
+    int muxIndex = isWhiteSide ? WHITE_STORAGE_MUX : BLACK_STORAGE_MUX;
     uint16_t result = 0;
 
     for (int channel = 0; channel < CHANNELS_PER_MUX; channel++) {
@@ -910,13 +924,16 @@ void BoardScanner::diagnosticScan() {
         return;
     }
 
-    // Board sensors (muxes 0-3)
-    for (int mux = 0; mux < BOARD_MUX_COUNT; mux++) {
-        int startRank = 8 - (mux * 2);
-        printf("  MUX %d (ranks %d-%d):\n", mux, startRank, startRank - 1);
+    // Board sensors (muxes 1-4)
+    for (int i = 0; i < BOARD_MUX_COUNT; i++) {
+        const int mux = BOARD_MUX_INDICES[i];
+        const char firstFile = 'a' + (i * 2);
+        const char secondFile = firstFile + 1;
+        printf("  MUX %d (files %c-%c):\n", mux, firstFile, secondFile);
 
         for (int channel = 0; channel < CHANNELS_PER_MUX; channel++) {
             int square = toSquareIndex(mux, channel);
+            if (square < 0) continue;
             int row = square / 8;
             int col = square % 8;
 
@@ -936,11 +953,12 @@ void BoardScanner::diagnosticScan() {
         printf("\n");
     }
 
-    // Storage sensors (muxes 4-5)
-    const char* sideNames[] = { "Black storage", "White storage" };
-    for (int mux = BOARD_MUX_COUNT; mux < TOTAL_MUX_COUNT; mux++) {
-        int sideIdx = mux - BOARD_MUX_COUNT;
-        printf("  MUX %d (%s):\n", mux, sideNames[sideIdx]);
+    // Storage sensors (muxes 0 and 5)
+    const int storageMuxes[STORAGE_MUX_COUNT] = { BLACK_STORAGE_MUX, WHITE_STORAGE_MUX };
+    const char* sideNames[STORAGE_MUX_COUNT] = { "Black storage", "White storage" };
+    for (int i = 0; i < STORAGE_MUX_COUNT; i++) {
+        const int mux = storageMuxes[i];
+        printf("  MUX %d (%s):\n", mux, sideNames[i]);
 
         for (int channel = 0; channel < CHANNELS_PER_MUX; channel++) {
             setMuxChannel(channel);

@@ -18,7 +18,7 @@
 *    The chess engine doesn't track individual piece identity — it only
 *    knows that "there's a black knight on d5," not "the b8-knight is on
 *    d5." But the physical board has labeled storage slots where each
-*    captured piece has a designated home (SLOT_KNIGHT_B, SLOT_PAWN_A,
+*    captured piece has a designated home (SLOT_N1, SLOT_P1,
 *    etc.). To disambiguate captures using storage slot identity, we need
 *    to track which original piece is on which square.
 *
@@ -28,10 +28,10 @@
 *    every move.
 *
 *    Example:
-*      - Game starts: square b8 (index 1) → SLOT_KNIGHT_B
-*      - Black plays Nf6: square b8 → SLOT_NONE, square f6 → SLOT_KNIGHT_B
+*      - Game starts: square b8 (index 1) → SLOT_N1
+*      - Black plays Nf6: square b8 → SLOT_NONE, square f6 → SLOT_N1
 *      - White captures Nxf6: square f6 → SLOT_NONE, piece goes to
-*        SLOT_KNIGHT_B in black's storage zone
+*        SLOT_N1 in black's storage zone
 *
 *    When the human captures a piece and places it in a storage slot,
 *    the scanner sees which slot gained a piece. The PieceTracker tells
@@ -47,6 +47,22 @@
 #include <cstdio>
 
 using Gantry::StartingSlot;
+using Gantry::SLOT_R1;
+using Gantry::SLOT_R2;
+using Gantry::SLOT_B1;
+using Gantry::SLOT_B2;
+using Gantry::SLOT_N1;
+using Gantry::SLOT_N2;
+using Gantry::SLOT_Q;
+using Gantry::SLOT_K;
+using Gantry::SLOT_P1;
+using Gantry::SLOT_P2;
+using Gantry::SLOT_P3;
+using Gantry::SLOT_P4;
+using Gantry::SLOT_P5;
+using Gantry::SLOT_P6;
+using Gantry::SLOT_P7;
+using Gantry::SLOT_P8;
 
 /************ Constants ************/
 
@@ -91,38 +107,42 @@ public:
     void initStartingPosition() {
         clear();
 
-        // Black back rank: a8=0, b8=1, ..., h8=7
-        // Maps to SLOT_ROOK_A(0) .. SLOT_ROOK_H(7)
+        // Black/white back ranks map to physical storage slots:
+        // a-file rook -> R1, b-file knight -> N1, c-file bishop -> B1,
+        // d-file queen -> Q, e-file king -> K, f-file bishop -> B2,
+        // g-file knight -> N2, h-file rook -> R2.
+        const int backRankSlots[8] = {
+            SLOT_R1, SLOT_N1, SLOT_B1, SLOT_Q,
+            SLOT_K,  SLOT_B2, SLOT_N2, SLOT_R2
+        };
+
         for (int col = 0; col < 8; col++) {
             int square = col;  // row 0, col
-            int slot = col;    // SLOT_ROOK_A=0 .. SLOT_ROOK_H=7
+            int slot = backRankSlots[col];
             squareToSlot[square] = slot;
             slotToSquare[1][slot] = square;  // side 1 = black
         }
 
-        // Black pawns: a7=8, b7=9, ..., h7=15
-        // Maps to SLOT_PAWN_A(8) .. SLOT_PAWN_H(15)
+        // Black pawns: a7=8, b7=9, ..., h7=15 map to P1..P8
         for (int col = 0; col < 8; col++) {
             int square = 8 + col;    // row 1, col
-            int slot = 8 + col;      // SLOT_PAWN_A=8 .. SLOT_PAWN_H=15
+            int slot = SLOT_P1 + col;
             squareToSlot[square] = slot;
             slotToSquare[1][slot] = square;
         }
 
-        // White pawns: a2=48, b2=49, ..., h2=55
-        // Maps to SLOT_PAWN_A(8) .. SLOT_PAWN_H(15)
+        // White pawns: a2=48, b2=49, ..., h2=55 map to P1..P8
         for (int col = 0; col < 8; col++) {
             int square = 48 + col;   // row 6, col
-            int slot = 8 + col;      // SLOT_PAWN_A=8 .. SLOT_PAWN_H=15
+            int slot = SLOT_P1 + col;
             squareToSlot[square] = slot;
             slotToSquare[0][slot] = square;  // side 0 = white
         }
 
-        // White back rank: a1=56, b1=57, ..., h1=63
-        // Maps to SLOT_ROOK_A(0) .. SLOT_ROOK_H(7)
+        // White back rank uses the same origin-to-slot mapping.
         for (int col = 0; col < 8; col++) {
             int square = 56 + col;   // row 7, col
-            int slot = col;          // SLOT_ROOK_A=0 .. SLOT_ROOK_H=7
+            int slot = backRankSlots[col];
             squareToSlot[square] = slot;
             slotToSquare[0][slot] = square;
         }
@@ -189,7 +209,7 @@ public:
     /**
      * Update tracking for pawn promotion.
      * The piece identity stays the same — a promoted pawn is still
-     * tracked as SLOT_PAWN_x. The physical piece doesn't change
+     * tracked as SLOT_Px. The physical piece doesn't change
      * (the system uses the same magnet), and when captured, the
      * promoted piece goes back to its pawn slot in storage.
      *
@@ -237,8 +257,8 @@ public:
         printf("    a  b  c  d  e  f  g  h\n");
 
         const char* slotNames[] = {
-            "Ra", "Nb", "Bc", "Qd", "Ke", "Bf", "Ng", "Rh",
-            "Pa", "Pb", "Pc", "Pd", "Pe", "Pf", "Pg", "Ph"
+            "R1", "R2", "B1", "B2", "N1", "N2", "Q ", "K ",
+            "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"
         };
 
         for (int row = 0; row < 8; row++) {
