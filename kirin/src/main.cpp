@@ -55,13 +55,15 @@
 
 // Hardware includes  
 #include "game_controller.h"
+#include "display_controller.h"
 
 /************ Run Mode ************/
 enum RunMode {
     MODE_UCI,           // Standard UCI protocol (for GUI or testing)
     MODE_PHYSICAL,      // Physical board with hardware
     MODE_SIMULATION,    // Interactive simulation (no hardware, manual moves)
-    MODE_DRYRUN         // Automatic engine-vs-engine dry run (no hardware, no input)
+    MODE_DRYRUN,        // Automatic engine-vs-engine dry run (no hardware, no input)
+    MODE_OLED_TEST      // OLED display hardware test
 };
 
 /************ Forward Declarations ************/
@@ -69,6 +71,7 @@ void printHelp();
 void runPhysicalMode(const char* port);
 void runSimulationMode();
 void runDryRunMode(int maxMoves, int searchDepth);
+void runOledTestMode();
 static void runSensorGameLoop(GameController& controller, bool engineWhite);
 static bool promptForBoardRecovery(GameController& controller);
 static bool finalizePhysicalEngineMove(GameController& controller, int engineMove);
@@ -93,6 +96,7 @@ void printHelp() {
     printf("                             MOVES: max moves per side (default 40)\n");
     printf("                             DEPTH: search depth (default 4)\n");
     printf("                             Example: kirin --dryrun 20 5\n");
+    printf("  --oled-test                Initialize OLED and show a test screen\n");
     printf("  --help, -h                 Show this help message\n");
     printf("\n");
     printf("UCI Mode:\n");
@@ -113,6 +117,22 @@ void printHelp() {
     printf("  annotations. Use this to audit the full command sequence before\n");
     printf("  powering the hardware for the first time.\n");
     printf("\n");
+}
+
+void runOledTestMode() {
+    printf("[DISPLAY] Starting OLED test on /dev/i2c-1 address 0x3C\n");
+    printf("[DISPLAY] Expected wiring: SDA=GPIO2 pin 3, SCL=GPIO3 pin 5\n");
+    fflush(stdout);
+
+    DisplayController display;
+    if (!display.init()) {
+        printf("[DISPLAY] OLED test failed. Check I2C enablement, wiring, and address.\n");
+        printf("[DISPLAY] Try: i2cdetect -y 1\n");
+        return;
+    }
+
+    display.showTestPattern();
+    printf("[DISPLAY] Test pattern displayed.\n");
 }
 
 /************ Sensor-Based Game Loop ************/
@@ -973,6 +993,9 @@ int main(int argc, char* argv[]) {
                 if (dryRunDepth <= 0) dryRunDepth = 4;
             }
         }
+        else if (strcmp(argv[i], "--oled-test") == 0) {
+            mode = MODE_OLED_TEST;
+        }
         else {
             printf("Unknown option: %s\n", argv[i]);
             printf("Use --help for usage information.\n");
@@ -996,6 +1019,9 @@ int main(int argc, char* argv[]) {
             
         case MODE_DRYRUN:
             runDryRunMode(dryRunMaxMoves, dryRunDepth);
+            break;
+        case MODE_OLED_TEST:
+            runOledTestMode();
             break;
     }
     
