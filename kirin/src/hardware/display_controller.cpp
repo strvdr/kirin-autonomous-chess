@@ -103,7 +103,7 @@ DisplayController::DisplayController(const char* i2cDevice,
                                      uint8_t i2cAddress,
                                      int displayWidth,
                                      int displayHeight)
-    : fd(-1), ready(false), devicePath(i2cDevice ? i2cDevice : "/dev/i2c-1"),
+    : fd(-1), ready(false), simulationMode(false), devicePath(i2cDevice ? i2cDevice : "/dev/i2c-1"),
       address(i2cAddress), width(displayWidth), height(displayHeight) {
     clearBuffer();
 }
@@ -118,6 +118,12 @@ bool DisplayController::init() {
     if (width != DEFAULT_WIDTH || height != DEFAULT_HEIGHT) {
         fprintf(stderr, "[DISPLAY] Error: only 128x64 OLED layout is currently implemented\n");
         return false;
+    }
+
+    if (simulationMode) {
+        ready = true;
+        clearBuffer();
+        return true;
     }
 
 #if KIRIN_HAS_I2C
@@ -170,6 +176,12 @@ bool DisplayController::init() {
 #endif
 }
 
+void DisplayController::enableSimulation() {
+    simulationMode = true;
+    ready = true;
+    clearBuffer();
+}
+
 void DisplayController::shutdown() {
 #if KIRIN_HAS_I2C
     if (fd >= 0) {
@@ -177,7 +189,9 @@ void DisplayController::shutdown() {
         fd = -1;
     }
 #endif
-    ready = false;
+    if (!simulationMode) {
+        ready = false;
+    }
 }
 
 bool DisplayController::writeCommand(uint8_t command) {
@@ -234,6 +248,7 @@ bool DisplayController::writeData(const uint8_t* data, int count) {
 
 bool DisplayController::flush() {
     if (!ready) return false;
+    if (simulationMode) return true;
 
     const uint8_t addressWindow[] = {
         0x21, 0x00, static_cast<uint8_t>(width - 1),
@@ -241,6 +256,13 @@ bool DisplayController::flush() {
     };
     return writeCommands(addressWindow, static_cast<int>(sizeof(addressWindow))) &&
            writeData(framebuffer, width * height / 8);
+}
+
+bool DisplayController::isPixelSet(int x, int y) const {
+    if (x < 0 || x >= width || y < 0 || y >= height) return false;
+    const int index = x + (y / 8) * width;
+    const uint8_t mask = static_cast<uint8_t>(1U << (y & 7));
+    return (framebuffer[index] & mask) != 0;
 }
 
 void DisplayController::clearBuffer() {

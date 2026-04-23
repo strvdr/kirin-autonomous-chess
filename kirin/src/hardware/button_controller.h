@@ -32,6 +32,7 @@ private:
     int pins[3];
     bool initialized;
     bool simulationMode;
+    bool simulatedState[3];
     bool rawState[3];
     bool stableState[3];
     std::chrono::steady_clock::time_point lastChange[3];
@@ -46,6 +47,7 @@ public:
     bool init();
     void enableSimulation();
     bool isInitialized() const { return initialized; }
+    void setSimulatedPressed(ButtonEvent button, bool pressed);
 
     ButtonEvent poll();
     const char* eventName(ButtonEvent event) const;

@@ -138,12 +138,13 @@
 
 \section{What This Document Covers}
 
-This guide walks through the complete process of connecting the Kirin software to the physical chess board hardware. By the end, you will have a Raspberry Pi running the Kirin engine, reading 96 hall effect sensors through multiplexers, and controlling a gantry system via GRBL over serial.
+This guide walks through the complete process of connecting the Kirin software to the physical chess board hardware. By the end, you will have a Raspberry Pi running the Kirin engine, reading 96 hall effect sensors through multiplexers, driving an OLED status display, reading operator buttons, and controlling a gantry system via GRBL over serial.
 
-The system has three hardware subsystems that connect to the Pi:
+The system has four hardware subsystems that connect to the Pi:
 
 \begin{enumerate}
     \item \textbf{Hall Effect Sensors (96 total)} --- detect piece presence on the board and in the two storage zones. Read through 6 multiplexers using 10 GPIO pins.
+    \item \textbf{Operator UI} --- a 128$\times$64 I2C OLED for status messages plus Start, Stop, and Reset buttons on dedicated GPIO pins.
     \item \textbf{GRBL Gantry Controller} --- moves pieces on the physical board via an electromagnet on a 2-axis gantry. Communicates over USB serial.
     \item \textbf{Electromagnet} --- controlled by the GRBL board via the spindle output (M3/M5 commands).
 \end{enumerate}
@@ -161,6 +162,7 @@ The system has three hardware subsystems that connect to the Pi:
     % Sensors
     \node[box, fill=green!10] (mux) at (-5, -2.5) {6$\times$ CD74HC4067\\Multiplexers};
     \node[box, fill=green!10] (sensors) at (-5, -4.5) {96$\times$ A3144\\Hall Effect Sensors};
+    \node[box, fill=blue!5] (ui) at (0, -3.5) {OLED Display\\+ Buttons};
     
     % GRBL
     \node[box, fill=orange!10] (grbl) at (5, -2.5) {GRBL Controller\\(Arduino/CNC Shield)};
@@ -169,6 +171,7 @@ The system has three hardware subsystems that connect to the Pi:
     % Connections
     \draw[arr] (pi) -- node[left, font=\footnotesize] {10 GPIO pins} (mux);
     \draw[arr] (mux) -- node[left, font=\footnotesize] {16 channels each} (sensors);
+    \draw[arr] (pi) -- node[right, font=\footnotesize] {I2C + 3 GPIO} (ui);
     \draw[arr] (pi) -- node[right, font=\footnotesize] {USB Serial} (grbl);
     \draw[arr] (grbl) -- node[right, font=\footnotesize] {Step/Dir + Spindle} (gantry);
 \end{tikzpicture}
@@ -202,8 +205,8 @@ Serial port & USB connection to GRBL controller \\
 
 \begin{lstlisting}[language=bash]
 # Clone the repository
-git clone https://github.com/your-repo/kirin.git
-cd kirin
+git clone https://github.com/strvdr/first-move-robotics.git
+cd first-move-robotics/kirin
 
 # Create build directory
 mkdir build && cd build
@@ -239,7 +242,8 @@ cd build
 ctest --output-on-failure
 
 # Or run individually
-./board_scanner_test     # Sensor move detection logic (62 tests)
+./board_scanner_test     # Sensor move detection logic (88 tests)
+./ui_controller_test     # OLED/button controller logic
 ./game_controller_test   # Engine-to-physical bridge
 ./board_interpreter_test # Path planning
 ./engine_test            # Engine validation
@@ -265,11 +269,11 @@ The 96 sensors are organized as follows:
 \toprule
 \textbf{Mux} & \textbf{Coverage} & \textbf{Channels} & \textbf{GPIO (SIG)} \\
 \midrule
-0 & Board ranks 8--7 (a8--h7) & 0--15 & GPIO 5 \\
-1 & Board ranks 6--5 (a6--h5) & 0--15 & GPIO 6 \\
-2 & Board ranks 4--3 (a4--h3) & 0--15 & GPIO 13 \\
-3 & Board ranks 2--1 (a2--h1) & 0--15 & GPIO 19 \\
-4 & Black storage zone (16 slots) & 0--15 & GPIO 26 \\
+0 & Black storage zone, left of a-file & 0--15 & GPIO 5 \\
+1 & Board files a--b & 0--15 & GPIO 6 \\
+2 & Board files c--d & 0--15 & GPIO 13 \\
+3 & Board files e--f & 0--15 & GPIO 19 \\
+4 & Board files g--h & 0--15 & GPIO 26 \\
 5 & White storage zone (16 slots) & 0--15 & GPIO 16 \\
 \bottomrule
 \end{tabular}
@@ -330,55 +334,70 @@ Each mux has a single SIG output that goes to its own GPIO pin on the Pi:
 
 \section{Sensor-to-Channel Mapping}
 
-Within each board mux, the 16 channels map to squares as follows:
+Muxes 1--4 scan the 64 board squares. Each board mux covers two adjacent files. Channels 0--7 map to the first file in that pair from rank 8 down to rank 1; channels 8--15 map to the second file in that pair from rank 8 down to rank 1.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ccl}
+\toprule
+\textbf{Mux} & \textbf{Files} & \textbf{Channel Pattern} \\
+\midrule
+1 & a--b & C0=a8, C1=a7, \ldots, C7=a1; C8=b8, \ldots, C15=b1 \\
+2 & c--d & C0=c8, C1=c7, \ldots, C7=c1; C8=d8, \ldots, C15=d1 \\
+3 & e--f & C0=e8, C1=e7, \ldots, C7=e1; C8=f8, \ldots, C15=f1 \\
+4 & g--h & C0=g8, C1=g7, \ldots, C7=g1; C8=h8, \ldots, C15=h1 \\
+\bottomrule
+\end{tabular}
+\caption{Board mux channel-to-square mapping}
+\end{table}
+
+Muxes 0 and 5 scan the storage zones. Mux 0 is black storage to the left of the a-file; mux 5 is white storage to the right of the h-file. In both zones, channels 0--7 are the inner column immediately adjacent to the board, and channels 8--15 are the outer pawn column.
 
 \begin{table}[H]
 \centering
 \begin{tabular}{cl|cl}
 \toprule
-\textbf{Channel} & \textbf{Square (Mux 0)} & \textbf{Channel} & \textbf{Square (Mux 0)} \\
+\textbf{Channel} & \textbf{Inner Column Slot} & \textbf{Channel} & \textbf{Outer Column Slot} \\
 \midrule
-0 & a8 & 8 & a7 \\
-1 & b8 & 9 & b7 \\
-2 & c8 & 10 & c7 \\
-3 & d8 & 11 & d7 \\
-4 & e8 & 12 & e7 \\
-5 & f8 & 13 & f7 \\
-6 & g8 & 14 & g7 \\
-7 & h8 & 15 & h7 \\
+0 & R1 & 8 & P1 \\
+1 & R2 & 9 & P2 \\
+2 & B1 & 10 & P3 \\
+3 & B2 & 11 & P4 \\
+4 & N1 & 12 & P5 \\
+5 & N2 & 13 & P6 \\
+6 & Q & 14 & P7 \\
+7 & K & 15 & P8 \\
 \bottomrule
 \end{tabular}
-\caption{Channel-to-square mapping (Mux 0 shown; pattern repeats for Mux 1--3)}
+\caption{Storage mux channel-to-slot mapping for both mux 0 and mux 5}
 \end{table}
-
-The pattern is: channels 0--7 map to the higher rank (file a through h), channels 8--15 map to the lower rank. For storage muxes (4 and 5), channels 0--7 are back-rank piece slots and channels 8--15 are pawn slots.
 
 \subsection{Full Board Sensor Map}
 
-The diagram below shows the complete mapping from every board square to its mux and channel. Each cell shows \textbf{M\textit{x}:C\textit{y}} where \textit{x} is the mux number (0--3) and \textit{y} is the channel (0--15). The mux select address (S3 S2 S1 S0) is shown for each channel on the right.
+The diagram below shows the complete mapping from every board square to its mux and channel. Each cell shows \textbf{M\textit{x}:C\textit{y}} where \textit{x} is the mux number (1--4) and \textit{y} is the channel (0--15). The mux select address (S3 S2 S1 S0) is shown for each channel on the right.
 
 \begin{center}
 \begin{tikzpicture}[scale=0.85]
     % Colors for each mux
-    \definecolor{mux0}{RGB}{200,220,255}
-    \definecolor{mux1}{RGB}{200,255,220}
-    \definecolor{mux2}{RGB}{255,240,200}
-    \definecolor{mux3}{RGB}{255,210,210}
+    \definecolor{mux1}{RGB}{200,220,255}
+    \definecolor{mux2}{RGB}{200,255,220}
+    \definecolor{mux3}{RGB}{255,240,200}
+    \definecolor{mux4}{RGB}{255,210,210}
     
     % Draw the 8x8 grid
     \foreach \col in {0,...,7} {
         \foreach \row in {0,...,7} {
-            % Determine mux number from row
-            \pgfmathtruncatemacro{\muxnum}{int(\row/2)}
-            % Determine channel: (row%2)*8 + col
-            \pgfmathtruncatemacro{\rowmod}{mod(\row,2)}
-            \pgfmathtruncatemacro{\chan}{\rowmod*8 + \col}
+            % Determine mux number from file pair.
+            \pgfmathtruncatemacro{\muxnum}{int(\col/2) + 1}
+            % Determine channel: first file C0-C7 rank 8-1, second file C8-C15 rank 8-1.
+            \pgfmathtruncatemacro{\filemod}{mod(\col,2)}
+            \pgfmathtruncatemacro{\chan}{\filemod*8 + \row}
             
             % Pick color based on mux
-            \ifnum\muxnum=0 \def\cellcolor{mux0}\fi
             \ifnum\muxnum=1 \def\cellcolor{mux1}\fi
             \ifnum\muxnum=2 \def\cellcolor{mux2}\fi
             \ifnum\muxnum=3 \def\cellcolor{mux3}\fi
+            \ifnum\muxnum=4 \def\cellcolor{mux4}\fi
             
             % Draw cell
             \fill[\cellcolor] (\col*2, -\row*1.2) rectangle ++(2, -1.2);
@@ -406,14 +425,14 @@ The diagram below shows the complete mapping from every board square to its mux 
     }
     
     % Mux labels (right side)
-    \node[font=\small\bfseries, fill=mux0, draw=gray, rounded corners, minimum width=2.2cm] 
-        at (18.5, -0.6-0.6) {Mux 0 (GPIO 5)};
     \node[font=\small\bfseries, fill=mux1, draw=gray, rounded corners, minimum width=2.2cm] 
-        at (18.5, -2.4-0.6) {Mux 1 (GPIO 6)};
+        at (18.5, -0.6-0.6) {Mux 1 a--b};
     \node[font=\small\bfseries, fill=mux2, draw=gray, rounded corners, minimum width=2.2cm] 
-        at (18.5, -4.8-0.6) {Mux 2 (GPIO 13)};
+        at (18.5, -2.4-0.6) {Mux 2 c--d};
     \node[font=\small\bfseries, fill=mux3, draw=gray, rounded corners, minimum width=2.2cm] 
-        at (18.5, -7.2-0.6) {Mux 3 (GPIO 19)};
+        at (18.5, -4.8-0.6) {Mux 3 e--f};
+    \node[font=\small\bfseries, fill=mux4, draw=gray, rounded corners, minimum width=2.2cm] 
+        at (18.5, -7.2-0.6) {Mux 4 g--h};
     
     % Select address reference (bottom)
     \node[anchor=north west, font=\small, text width=16cm] at (0, -10.5) {%
@@ -428,7 +447,7 @@ The diagram below shows the complete mapping from every board square to its mux 
 
 \subsection{Storage Zone Sensor Map}
 
-The two storage zone muxes (4 and 5) each have 16 channels mapped to piece storage slots:
+The two storage zone muxes each have 16 channels mapped to exact piece storage slots. The black storage zone is left of the a-file on mux 0. The white storage zone is right of the h-file on mux 5. Each zone uses the same top-to-bottom order: R1, R2, B1, B2, N1, N2, Q, K in the inner column and P1--P8 in the outer column.
 
 \begin{center}
 \begin{tikzpicture}[scale=0.85]
@@ -436,41 +455,41 @@ The two storage zone muxes (4 and 5) each have 16 channels mapped to piece stora
     \definecolor{storewh}{RGB}{200,220,255}
     
     % Black storage (left)
-    \node[font=\large\bfseries] at (3.5, 1) {Black Storage --- Mux 4 (GPIO 26)};
-    \foreach \slot in {0,...,7} {
+    \node[font=\large\bfseries] at (3.5, 1) {Black Storage --- Mux 0 (GPIO 5)};
+    \foreach \slot/\name in {0/R1,1/R2,2/B1,3/B2,4/N1,5/N2,6/Q,7/K} {
         \fill[storebk] (0, -\slot*0.9) rectangle ++(3.5, -0.9);
         \draw[gray] (0, -\slot*0.9) rectangle ++(3.5, -0.9);
-        \node[font=\footnotesize] at (1.75, -\slot*0.9-0.45) {C\slot: piece slot \slot};
+        \node[font=\footnotesize] at (1.75, -\slot*0.9-0.45) {C\slot: \name};
     }
-    \foreach \slot in {0,...,7} {
+    \foreach \slot/\name in {0/P1,1/P2,2/P3,3/P4,4/P5,5/P6,6/P7,7/P8} {
         \pgfmathtruncatemacro{\chan}{\slot+8}
         \fill[storebk!60] (4, -\slot*0.9) rectangle ++(3.5, -0.9);
         \draw[gray] (4, -\slot*0.9) rectangle ++(3.5, -0.9);
-        \node[font=\footnotesize] at (5.75, -\slot*0.9-0.45) {C\chan: pawn slot \slot};
+        \node[font=\footnotesize] at (5.75, -\slot*0.9-0.45) {C\chan: \name};
     }
     
     % White storage (right)
     \node[font=\large\bfseries] at (14.5, 1) {White Storage --- Mux 5 (GPIO 16)};
-    \foreach \slot in {0,...,7} {
+    \foreach \slot/\name in {0/R1,1/R2,2/B1,3/B2,4/N1,5/N2,6/Q,7/K} {
         \fill[storewh] (11, -\slot*0.9) rectangle ++(3.5, -0.9);
         \draw[gray] (11, -\slot*0.9) rectangle ++(3.5, -0.9);
-        \node[font=\footnotesize] at (12.75, -\slot*0.9-0.45) {C\slot: piece slot \slot};
+        \node[font=\footnotesize] at (12.75, -\slot*0.9-0.45) {C\slot: \name};
     }
-    \foreach \slot in {0,...,7} {
+    \foreach \slot/\name in {0/P1,1/P2,2/P3,3/P4,4/P5,5/P6,6/P7,7/P8} {
         \pgfmathtruncatemacro{\chan}{\slot+8}
         \fill[storewh!60] (15, -\slot*0.9) rectangle ++(3.5, -0.9);
         \draw[gray] (15, -\slot*0.9) rectangle ++(3.5, -0.9);
-        \node[font=\footnotesize] at (16.75, -\slot*0.9-0.45) {C\chan: pawn slot \slot};
+        \node[font=\footnotesize] at (16.75, -\slot*0.9-0.45) {C\chan: \name};
     }
     
     \node[font=\footnotesize, text width=18cm, anchor=north west] at (0, -7.8) {%
-        \textbf{Piece slots (C0--C7):} Rook, Knight, Bishop, Queen, King, Bishop, Knight, Rook (matching files a--h).\\
-        \textbf{Pawn slots (C8--C15):} One per file, a--h.
+        \textbf{Inner column (C0--C7):} R1, R2, B1, B2, N1, N2, Q, K.\\
+        \textbf{Outer column (C8--C15):} P1, P2, P3, P4, P5, P6, P7, P8.
     };
 \end{tikzpicture}
 \end{center}
 
-\tipbox{If your physical wiring doesn't match this channel order, you have two options: re-wire the sensors, or modify \texttt{toSquareIndex()} in \texttt{board\_scanner.cpp} to match your actual wiring. Re-wiring is usually easier.}
+\tipbox{If your physical wiring doesn't match this channel order, the software's idea of the board will diverge from the hardware. Either re-wire the sensors to this map or update \texttt{toSquareIndex()} and the storage-slot mapping in \texttt{board\_scanner.cpp}.}
 
 \section{A3144 Sensor Circuit}
 
@@ -556,8 +575,8 @@ Key settings to verify:
 \$111 & Y max rate (in/min) & Must be $\geq$ 1000 \\
 \$120 & X acceleration (in/s$^2$) & Start with 10, increase after testing \\
 \$121 & Y acceleration (in/s$^2$) & Start with 10, increase after testing \\
-\$130 & X max travel (in) & Should be $\geq$ 22 (rail travel) \\
-\$131 & Y max travel (in) & Should be $\geq$ 22 \\
+\$130 & X max travel (in) & Should cover the calibrated command envelope (currently up to X=19.0) \\
+\$131 & Y max travel (in) & Should cover the calibrated command envelope (currently up to Y=14.92) \\
 \$22 & Homing cycle & Set to 1 (enabled) \\
 \bottomrule
 \end{tabular}
@@ -587,40 +606,88 @@ M5     # Magnet should release
 The software maps board squares to physical coordinates in inches. The board layout is:
 
 \begin{center}
-\begin{tikzpicture}[scale=0.38]
+\begin{tikzpicture}[scale=0.48]
     % Rail
-    \draw[thick] (0, 0) rectangle (22, 18);
+    \draw[thick] (0, 0) rectangle (20.5, 19);
+    \draw[<->] (0.5, 17.5) -- (20, 17.5) node[midway, above] {\footnotesize 22'' physical rail travel};
     
     % Board
-    \draw[thick, fill=blue!5] (3, 1) rectangle (19, 17);
-    \node at (11, 9) {\large 16'' $\times$ 16'' Board};
-    \node at (11, 7.5) {\footnotesize 8$\times$8 grid, 2'' squares};
+    \draw[thick, fill=blue!5] (4.25, 3.67) rectangle (16.25, 15.67);
+    \node at (10.25, 10.0) {\large 12'' $\times$ 12'' Board};
+    \node at (10.25, 8.7) {\footnotesize 8$\times$8 grid, 1.5'' squares};
     
     % Black storage
-    \draw[thick, fill=red!5] (0.2, 1) rectangle (2.8, 17);
-    \node[rotate=90] at (1.5, 9) {\footnotesize Black Storage};
+    \draw[thick, fill=red!5] (0.75, 3.67) rectangle (3.75, 15.67);
+    \node[rotate=90] at (2.25, 10.0) {\footnotesize Black Storage};
     
     % White storage
-    \draw[thick, fill=green!5] (19.2, 1) rectangle (21.8, 17);
-    \node[rotate=90] at (20.5, 9) {\footnotesize White Storage};
+    \draw[thick, fill=green!5] (16.75, 3.67) rectangle (19.75, 15.67);
+    \node[rotate=90] at (18.25, 10.0) {\footnotesize White Storage};
     
     % Dimensions
-    \draw[<->] (0, -0.7) -- (3, -0.7) node[midway, below] {\footnotesize 3''};
-    \draw[<->] (3, -0.7) -- (19, -0.7) node[midway, below] {\footnotesize 16''};
-    \draw[<->] (19, -0.7) -- (22, -0.7) node[midway, below] {\footnotesize 3''};
-    \draw[<->] (22.7, 0) -- (22.7, 18) node[midway, right] {\footnotesize 22''};
+    \draw[<->] (0.75, 1.3) -- (19.75, 1.3) node[midway, below] {\footnotesize 19'' occupied hardware width};
+    \draw[<->] (4.25, 2.6) -- (16.25, 2.6) node[midway, below] {\footnotesize 12'' board};
+    \draw[<->] (0.75, 3.0) -- (3.75, 3.0) node[midway, below] {\footnotesize storage};
+    \draw[<->] (16.75, 3.0) -- (19.75, 3.0) node[midway, below] {\footnotesize storage};
+    \draw[<->] (21.5, 3.67) -- (21.5, 15.67) node[midway, right] {\footnotesize 12''};
     
     % a1 marker
-    \filldraw[red] (4, 2) circle (0.15);
-    \node[red, above right] at (4, 2) {\footnotesize a1 (4.0, 4.0)};
+    \filldraw[red] (5.0, 4.42) circle (0.12);
+    \node[red, above right] at (5.0, 4.42) {\footnotesize a1 (5.000, 4.420)};
     
     % h8 marker
-    \filldraw[red] (18, 16) circle (0.15);
-    \node[red, below left] at (18, 16) {\footnotesize h8 (18.0, 18.0)};
+    \filldraw[red] (15.5, 14.92) circle (0.12);
+    \node[red, below left] at (15.5, 14.92) {\footnotesize h8 (15.500, 14.920)};
 \end{tikzpicture}
 \end{center}
 
-The coordinate system origin (0,0) is at the bottom-left of the rail travel. Square a1 is centered at (4.0'', 4.0'') and each square is 2'' wide. Verify that the gantry homes to (0,0) and that commanding \texttt{G1 X4.0 Y4.0} positions the magnet over the center of a1.
+The physical rails are 22'' long. The occupied hardware width is 19'': 3'' storage + 0.5'' gap + 12'' board + 0.5'' gap + 3'' storage. The coordinate system is the calibrated G54 work frame used by Kirin's normal \texttt{G1} moves. Square a1 is centered at (5.000'', 4.420'') and each square is 1.5'' wide. Ranks advance along +X and files advance along +Y, so h8 is centered at (15.500'', 14.920''). The storage rows use the same 1.5'' vertical spacing and align with the board file coordinates.
+
+
+%==============================================================================
+\chapter{Operator UI: OLED Display and Buttons}
+%==============================================================================
+
+\section{OLED Display}
+
+Kirin supports a 128$\times$64 SSD1306-compatible OLED on the Raspberry Pi's I2C bus. The default software configuration is \texttt{/dev/i2c-1} at address \texttt{0x3C}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{cll}
+\toprule
+\textbf{Signal} & \textbf{BCM GPIO / Header Pin} & \textbf{Connects To} \\
+\midrule
+SDA & GPIO 2 / Pin 3 & OLED SDA \\
+SCL & GPIO 3 / Pin 5 & OLED SCL \\
+3.3V & Pin 1 or Pin 17 & OLED VCC \\
+GND & Any Pi ground pin & OLED GND \\
+\bottomrule
+\end{tabular}
+\caption{OLED I2C wiring}
+\end{table}
+
+The display controller is implemented in \texttt{display\_controller.h/.cpp}. Physical mode uses it for high-level status messages: booting, hardware ready, waiting for the human move, engine thinking, executing a move, illegal board state, wrong storage slot, game over, and idle. Use \texttt{--oled-test} to initialize the display and show a test screen without starting a physical game.
+
+\section{Operator Buttons}
+
+Kirin supports three active-low buttons using Raspberry Pi internal pull-ups. Pressing a button connects its GPIO line to ground. The button controller is implemented in \texttt{button\_controller.h/.cpp}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{cll}
+\toprule
+\textbf{Button} & \textbf{BCM GPIO / Header Pin} & \textbf{Meaning at Safe Prompt} \\
+\midrule
+Start & GPIO 20 / Pin 38 & Idle: start \texttt{play white}; active game: run \texttt{go} \\
+Stop & GPIO 21 / Pin 40 & Active game: stop game; idle: exit physical mode \\
+Reset & GPIO 24 / Pin 18 & Home the gantry \\
+\bottomrule
+\end{tabular}
+\caption{Operator button wiring and behavior}
+\end{table}
+
+\warningbox{The buttons are high-level UI controls, not an asynchronous emergency stop. They are polled only at safe physical-mode prompts and are not polled during blocking gantry motion, engine search, or \texttt{waitForHumanMove}.}
 
 
 %==============================================================================
@@ -655,13 +722,15 @@ You should see:
 Kirin Autonomous Chess System v0.3
 Physical Board Mode
 
+[DISPLAY] OLED initialized on /dev/i2c-1 address 0x3C
+[BUTTONS] Start=GPIO20 Stop=GPIO21 Reset=GPIO24
 Connecting to gantry on /dev/ttyUSB0...
 Connected to gantry on /dev/ttyUSB0
 Initializing board scanner...
 [SCANNER] GPIO initialized successfully (6 muxes: 4 board + 2 storage)
   Select lines: GPIO 17, 27, 22, 23
-  Board muxes:  GPIO 5, 6, 13, 19
-  Storage muxes: GPIO 26 (black), 16 (white)
+  Board muxes:  GPIO 6, 13, 19, 26
+  Storage muxes: GPIO 5 (black), 16 (white)
 Board scanner initialized
 Homing gantry...
 Homing complete
@@ -891,18 +960,25 @@ Complete pin assignment table using BCM (Broadcom) numbering:
 22 & Output & Select S2 & S2 on all 6 muxes \\
 23 & Output & Select S3 & S3 on all 6 muxes \\
 \addlinespace
-5  & Input  & Mux 0 SIG & Board ranks 8--7 \\
-6  & Input  & Mux 1 SIG & Board ranks 6--5 \\
-13 & Input  & Mux 2 SIG & Board ranks 4--3 \\
-19 & Input  & Mux 3 SIG & Board ranks 2--1 \\
-26 & Input  & Mux 4 SIG & Black storage zone \\
+5  & Input  & Mux 0 SIG & Black storage zone \\
+6  & Input  & Mux 1 SIG & Board files a--b \\
+13 & Input  & Mux 2 SIG & Board files c--d \\
+19 & Input  & Mux 3 SIG & Board files e--f \\
+26 & Input  & Mux 4 SIG & Board files g--h \\
 16 & Input  & Mux 5 SIG & White storage zone \\
+\addlinespace
+2  & I2C & OLED SDA & OLED display data \\
+3  & I2C & OLED SCL & OLED display clock \\
+\addlinespace
+20 & Input & Start button & Active-low, pull-up enabled \\
+21 & Input & Stop button & Active-low, pull-up enabled \\
+24 & Input & Reset button & Active-low, pull-up enabled \\
 \bottomrule
 \end{tabular}
-\caption{All GPIO pin assignments (10 pins total)}
+\caption{All GPIO pin assignments for sensors and operator UI}
 \end{table}
 
-\notebox{These pin assignments can be overridden by passing custom arrays to the \texttt{BoardScanner} constructor. The defaults are defined in \texttt{board\_scanner.h}. If you need to change them, modify the \texttt{DEFAULT\_PIN\_*} constants and rebuild, or pass them at construction time.}
+\notebox{The mux pin assignments can be overridden by passing custom arrays to the \texttt{BoardScanner} constructor. The button defaults are defined in \texttt{button\_controller.h}; the OLED defaults are defined in \texttt{display\_controller.h}. If you need to change them, update the corresponding default constants and rebuild.}
 
 \begin{table}[H]
 \centering
@@ -914,12 +990,17 @@ Pin 11 & GPIO 17 (S0) \\
 Pin 13 & GPIO 27 (S1) \\
 Pin 15 & GPIO 22 (S2) \\
 Pin 16 & GPIO 23 (S3) \\
+Pin 3 & GPIO 2 (OLED SDA) \\
+Pin 5 & GPIO 3 (OLED SCL) \\
 Pin 29 & GPIO 5 (Mux 0) \\
 Pin 31 & GPIO 6 (Mux 1) \\
 Pin 33 & GPIO 13 (Mux 2) \\
 Pin 35 & GPIO 19 (Mux 3) \\
 Pin 37 & GPIO 26 (Mux 4) \\
 Pin 36 & GPIO 16 (Mux 5) \\
+Pin 38 & GPIO 20 (Start button) \\
+Pin 40 & GPIO 21 (Stop button) \\
+Pin 18 & GPIO 24 (Reset button) \\
 \bottomrule
 \end{tabular}
 \caption{BCM to physical header pin mapping}
@@ -966,6 +1047,8 @@ Quick reference for all commands available in physical mode:
 \caption{Physical mode commands}
 \end{table}
 
+\notebox{The \texttt{--oled-test} command-line flag starts only the OLED test screen. It is useful for verifying display wiring before testing the full physical board. The Start, Stop, and Reset buttons mirror safe prompt actions as documented in the Operator UI chapter.}
+
 %==============================================================================
 \chapter{Tunable Parameters}
 %==============================================================================
@@ -990,9 +1073,13 @@ These constants in \texttt{board\_scanner.h} and \texttt{gantry\_controller.h} m
 \addlinespace
 \texttt{FEED\_RATE} & 1000 in/min & Gantry movement speed. Reduce if the gantry skips steps or knocks pieces over. \\
 \addlinespace
-\texttt{SQUARE\_SIZE} & 2.0 in & Physical size of each board square. \\
+\texttt{SQUARE\_SIZE} & 1.5 in & Physical size of each board square. \\
 \addlinespace
-\texttt{BOARD\_MARGIN} & 3.0 in & Distance from rail edge to first board square. \\
+\texttt{BOARD\_SIZE} & 12.0 in & Physical size of the 8$\times$8 board area. \\
+\addlinespace
+\texttt{A1\_CENTER\_X/Y} & 5.000 / 4.420 in & Calibrated center of a1 in the G54 work frame. \\
+\addlinespace
+\texttt{CAPTURE\_VERTICAL\_SPACING} & 1.5 in & Storage slot row spacing; matches the board square size. \\
 \bottomrule
 \end{tabular}
 \caption{Tunable hardware parameters}

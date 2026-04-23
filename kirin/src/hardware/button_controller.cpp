@@ -39,6 +39,7 @@ ButtonEvent eventForIndex(int index) {
 ButtonController::ButtonController()
     : pins{DEFAULT_PIN_BUTTON_START, DEFAULT_PIN_BUTTON_STOP, DEFAULT_PIN_BUTTON_RESET},
       initialized(false), simulationMode(false),
+      simulatedState{false, false, false},
       rawState{false, false, false},
       stableState{false, false, false} {
     auto now = std::chrono::steady_clock::now();
@@ -50,6 +51,7 @@ ButtonController::ButtonController()
 ButtonController::ButtonController(int startPin, int stopPin, int resetPin)
     : pins{startPin, stopPin, resetPin},
       initialized(false), simulationMode(false),
+      simulatedState{false, false, false},
       rawState{false, false, false},
       stableState{false, false, false} {
     auto now = std::chrono::steady_clock::now();
@@ -156,11 +158,33 @@ bool ButtonController::init() {
 void ButtonController::enableSimulation() {
     simulationMode = true;
     initialized = true;
+    auto now = std::chrono::steady_clock::now();
+    for (int i = 0; i < BUTTON_COUNT; i++) {
+        simulatedState[i] = false;
+        rawState[i] = false;
+        stableState[i] = false;
+        lastChange[i] = now;
+    }
+}
+
+void ButtonController::setSimulatedPressed(ButtonEvent button, bool pressed) {
+    int index = -1;
+    switch (button) {
+        case ButtonEvent::Start: index = 0; break;
+        case ButtonEvent::Stop: index = 1; break;
+        case ButtonEvent::Reset: index = 2; break;
+        case ButtonEvent::None: return;
+    }
+    simulatedState[index] = pressed;
 }
 
 bool ButtonController::readRaw(int index) {
+    if (simulationMode) {
+        return (index >= 0 && index < BUTTON_COUNT) ? simulatedState[index] : false;
+    }
+
 #if HAS_BUTTON_GPIO
-    if (simulationMode || !buttonRequest || index < 0 || index >= BUTTON_COUNT) {
+    if (!buttonRequest || index < 0 || index >= BUTTON_COUNT) {
         return false;
     }
 
@@ -173,7 +197,7 @@ bool ButtonController::readRaw(int index) {
 }
 
 ButtonEvent ButtonController::poll() {
-    if (!initialized || simulationMode) return ButtonEvent::None;
+    if (!initialized) return ButtonEvent::None;
 
     const auto now = std::chrono::steady_clock::now();
     for (int i = 0; i < BUTTON_COUNT; i++) {

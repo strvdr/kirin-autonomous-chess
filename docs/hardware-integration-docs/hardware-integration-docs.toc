@@ -13,7 +13,7 @@
 \contentsline {subsection}{\numberline {3.2.2}Signal Output Lines (Each Mux $\rightarrow $ Pi)}{8}{subsection.3.2.2}%
 \contentsline {subsection}{\numberline {3.2.3}Power and Enable}{9}{subsection.3.2.3}%
 \contentsline {section}{\numberline {3.3}Sensor-to-Channel Mapping}{9}{section.3.3}%
-\contentsline {subsection}{\numberline {3.3.1}Full Board Sensor Map}{9}{subsection.3.3.1}%
+\contentsline {subsection}{\numberline {3.3.1}Full Board Sensor Map}{10}{subsection.3.3.1}%
 \contentsline {subsection}{\numberline {3.3.2}Storage Zone Sensor Map}{10}{subsection.3.3.2}%
 \contentsline {section}{\numberline {3.4}A3144 Sensor Circuit}{11}{section.3.4}%
 \contentsline {chapter}{\numberline {4}Connecting the Gantry}{12}{chapter.4}%
@@ -21,22 +21,25 @@
 \contentsline {section}{\numberline {4.2}GRBL Settings}{12}{section.4.2}%
 \contentsline {section}{\numberline {4.3}Electromagnet Control}{13}{section.4.3}%
 \contentsline {section}{\numberline {4.4}Physical Coordinate System}{13}{section.4.4}%
-\contentsline {chapter}{\numberline {5}First Power-On Procedure}{14}{chapter.5}%
-\contentsline {section}{\numberline {5.1}Step 1: Verify GPIO Chip}{14}{section.5.1}%
-\contentsline {section}{\numberline {5.2}Step 2: Start Kirin in Physical Mode}{14}{section.5.2}%
-\contentsline {section}{\numberline {5.3}Step 3: Run Sensor Diagnostics}{14}{section.5.3}%
-\contentsline {section}{\numberline {5.4}Step 4: Quick Scan}{15}{section.5.4}%
-\contentsline {section}{\numberline {5.5}Step 5: Test the Gantry}{15}{section.5.5}%
-\contentsline {section}{\numberline {5.6}Step 6: Gantry Coordinate Calibration}{15}{section.5.6}%
-\contentsline {chapter}{\numberline {6}Running Your First Game}{16}{chapter.6}%
-\contentsline {section}{\numberline {6.1}Stage 1: Manual Move Entry (No Sensors)}{16}{section.6.1}%
-\contentsline {section}{\numberline {6.2}Stage 2: Sensor-Based Play}{16}{section.6.2}%
-\contentsline {subsection}{\numberline {6.2.1}What to Test}{16}{subsection.6.2.1}%
-\contentsline {section}{\numberline {6.3}Stage 3: Full Game}{17}{section.6.3}%
-\contentsline {chapter}{\numberline {7}Troubleshooting}{18}{chapter.7}%
-\contentsline {section}{\numberline {7.1}Sensor Issues}{18}{section.7.1}%
-\contentsline {section}{\numberline {7.2}Gantry Issues}{19}{section.7.2}%
-\contentsline {section}{\numberline {7.3}Move Detection Issues}{19}{section.7.3}%
-\contentsline {chapter}{\numberline {8}GPIO Pin Reference}{20}{chapter.8}%
-\contentsline {chapter}{\numberline {9}Software Command Reference}{21}{chapter.9}%
-\contentsline {chapter}{\numberline {10}Tunable Parameters}{22}{chapter.10}%
+\contentsline {chapter}{\numberline {5}Operator UI: OLED Display and Buttons}{14}{chapter.5}%
+\contentsline {section}{\numberline {5.1}OLED Display}{14}{section.5.1}%
+\contentsline {section}{\numberline {5.2}Operator Buttons}{14}{section.5.2}%
+\contentsline {chapter}{\numberline {6}First Power-On Procedure}{15}{chapter.6}%
+\contentsline {section}{\numberline {6.1}Step 1: Verify GPIO Chip}{15}{section.6.1}%
+\contentsline {section}{\numberline {6.2}Step 2: Start Kirin in Physical Mode}{15}{section.6.2}%
+\contentsline {section}{\numberline {6.3}Step 3: Run Sensor Diagnostics}{15}{section.6.3}%
+\contentsline {section}{\numberline {6.4}Step 4: Quick Scan}{16}{section.6.4}%
+\contentsline {section}{\numberline {6.5}Step 5: Test the Gantry}{16}{section.6.5}%
+\contentsline {section}{\numberline {6.6}Step 6: Gantry Coordinate Calibration}{16}{section.6.6}%
+\contentsline {chapter}{\numberline {7}Running Your First Game}{18}{chapter.7}%
+\contentsline {section}{\numberline {7.1}Stage 1: Manual Move Entry (No Sensors)}{18}{section.7.1}%
+\contentsline {section}{\numberline {7.2}Stage 2: Sensor-Based Play}{18}{section.7.2}%
+\contentsline {subsection}{\numberline {7.2.1}What to Test}{18}{subsection.7.2.1}%
+\contentsline {section}{\numberline {7.3}Stage 3: Full Game}{19}{section.7.3}%
+\contentsline {chapter}{\numberline {8}Troubleshooting}{20}{chapter.8}%
+\contentsline {section}{\numberline {8.1}Sensor Issues}{20}{section.8.1}%
+\contentsline {section}{\numberline {8.2}Gantry Issues}{21}{section.8.2}%
+\contentsline {section}{\numberline {8.3}Move Detection Issues}{21}{section.8.3}%
+\contentsline {chapter}{\numberline {9}GPIO Pin Reference}{22}{chapter.9}%
+\contentsline {chapter}{\numberline {10}Software Command Reference}{24}{chapter.10}%
+\contentsline {chapter}{\numberline {11}Tunable Parameters}{25}{chapter.11}%

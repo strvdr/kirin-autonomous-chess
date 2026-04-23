@@ -245,9 +245,9 @@ static void testTrackerPersistsAcrossSync() {
     gc.syncWithEngine();
 
     const PieceTracker& trackerAfterE4 = gc.getPieceTracker();
-    TEST_ASSERT(trackerAfterE4.getSquareForSlot(true, Gantry::SLOT_PAWN_E) == e4,
+    TEST_ASSERT(trackerAfterE4.getSquareForSlot(true, Gantry::SLOT_P5) == e4,
                 "white e-pawn remains tracked on e4 after sync");
-    TEST_ASSERT(trackerAfterE4.getSlotAt(e4) == Gantry::SLOT_PAWN_E,
+    TEST_ASSERT(trackerAfterE4.getSlotAt(e4) == Gantry::SLOT_P5,
                 "e4 square retains e-pawn identity after sync");
 
     int g8f6 = parseBoardMove("g8f6");
@@ -257,9 +257,9 @@ static void testTrackerPersistsAcrossSync() {
     gc.syncWithEngine();
 
     const PieceTracker& trackerAfterNf6 = gc.getPieceTracker();
-    TEST_ASSERT(trackerAfterNf6.getSquareForSlot(false, Gantry::SLOT_KNIGHT_G) == f6,
+    TEST_ASSERT(trackerAfterNf6.getSquareForSlot(false, Gantry::SLOT_N2) == f6,
                 "black g-knight remains tracked on f6 after sync");
-    TEST_ASSERT(trackerAfterNf6.getSquareForSlot(true, Gantry::SLOT_PAWN_E) == e4,
+    TEST_ASSERT(trackerAfterNf6.getSquareForSlot(true, Gantry::SLOT_P5) == e4,
                 "white e-pawn identity survives later sync");
 }
 

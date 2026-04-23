@@ -20,11 +20,7 @@
 
 ## Overview
 
-<<<<<<< HEAD
-Kirin is an autonomous chess system that delivers a complete single-player experience by pairing a custom chess engine with a physically-actuated board. A two-axis gantry equipped with an electromagnet moves pieces across the board independently, eliminating the need for a human opponent while preserving the tactile satisfaction of over-the-board play. This README is intended to serve as a general overview, but comprehensive documentation for all software can be found in this repository under /docs.
-=======
-Kirin is an autonomous chess system that delivers a complete single-player experience by pairing a custom chess engine with a physically-actuated board. A two-axis gantry equipped with an electromagnet moves pieces across the board independently, while hall effect sensors detect the human player's moves — eliminating the need for a human opponent while preserving the tactile satisfaction of over-the-board play.
->>>>>>> b79318b6a99573981b8e596bc012288f14f80021
+Kirin is an autonomous chess system that delivers a complete single-player experience by pairing a custom chess engine with a physically-actuated board. A two-axis gantry equipped with an electromagnet moves pieces across the board independently, while hall effect sensors detect the human player's moves, eliminating the need for a human opponent while preserving the tactile satisfaction of over-the-board play. This README is intended to serve as a general overview; comprehensive documentation lives under `/docs`.
 
 The system is built around four tightly-coupled layers:
 
@@ -32,58 +28,65 @@ The system is built around four tightly-coupled layers:
 - **Board Scanner** — 96 hall effect sensors read via multiplexed GPIO to detect piece presence on the board and in storage zones
 - **Board Interpreter** — Translates engine moves into physical paths, handling blocker detection, piece parking, and A\* pathfinding
 - **Gantry Controller** — Generates and dispatches G-code to a GRBL-based motion controller via serial
+- **Operator UI** — I2C OLED status display plus start/stop/reset buttons for safe physical-mode controls
 
 ---
 
 ## Hardware
 
 ```
-         22" rail travel
+         22" physical rail travel
 |<------------------------------->|
 |                                 |
 |  +-+ +---------------------+ +-+|
 |  |B| |                     | |W||
-|  |L| |     16" board       | |H||
+|  |L| |     12" board       | |H||
 |  |A| |                     | |I||
 |  |C| |      8x8 grid       | |T||
 |  |K| |                     | |E||
 |  +-+ +---------------------+ +-+|
-|  3.0"        16"           3.0" |
-|<--->|<------------------->|<--->|
+|  3.0"  .5"   12"    .5"   3.0" |
+|<---------- 19" occupied width ---------->|
    ^                            ^
    |                            |
 Black storage               White storage
-X = 1.5" (center)          X = 20.5" (center)
-Y = 4" to 18"              Y = 4" to 18"
+X = 1.5", 3.0"             X = 17.5", 19.0"
+Y = 4.420" to 14.920"      Y = 4.420" to 14.920"
 ```
 
 | Component | Specification |
 |---|---|
-| Rail travel | 22 inches |
-| Board size | 16 × 16 inches |
-| Square size | 2 × 2 inches |
-| Storage zones | 3-inch margins, left (black) and right (white) |
+| Physical rail travel | 22 inches |
+| Occupied hardware width | 19 inches: 3" storage + 0.5" gap + 12" board + 0.5" gap + 3" storage |
+| Board size | 12 × 12 inches |
+| Square size | 1.5 × 1.5 inches |
+| Board calibration | `a1 = (5.000, 4.420)`, `h8 = (15.500, 14.920)` in the G54 work frame |
+| Storage columns | Black: X `3.000` inner, `1.500` outer; White: X `17.500` inner, `19.000` outer |
 | Motion controller | GRBL 1.1 |
 | Serial connection | 115200 baud, 8N1 |
 | Piece actuation | Electromagnet (M3/M5 spindle commands) |
 | Piece detection | 96× A3144 hall effect sensors (active-low, 10K pull-up) |
 | Sensor muxing | 6× CD74HC4067 16:1 multiplexers, 4 shared select lines |
 | Sensor controller | Raspberry Pi GPIO (libgpiod) |
+| Status display | 128×64 SSD1306-compatible I2C OLED (`/dev/i2c-1`, address `0x3C`) |
+| Operator buttons | 3× active-low GPIO buttons: Start GPIO20, Stop GPIO21, Reset GPIO24 |
 
 ### Sensor Layout
 
-The 96 hall effect sensors are organized across six multiplexers sharing four select lines (S0–S3):
+The 96 hall effect sensors are organized across six multiplexers sharing four select lines (S0-S3):
 
 | Mux | Coverage | Sensors |
 |---|---|---|
-| 0 | Board ranks 8–7 (a8–h7) | 16 |
-| 1 | Board ranks 6–5 (a6–h5) | 16 |
-| 2 | Board ranks 4–3 (a4–h3) | 16 |
-| 3 | Board ranks 2–1 (a2–h1) | 16 |
-| 4 | Black storage zone | 16 |
+| 0 | Black storage zone, left of a-file | 16 |
+| 1 | Board files a-b | 16 |
+| 2 | Board files c-d | 16 |
+| 3 | Board files e-f | 16 |
+| 4 | Board files g-h | 16 |
 | 5 | White storage zone | 16 |
 
-Each storage mux has 16 channels: channels 0–7 for back-rank piece slots (rook, knight, bishop, queen, king, bishop, knight, rook) and channels 8–15 for pawn slots (files a–h).
+For board muxes 1-4, channels 0-7 map to the first file in the pair from rank 8 down to rank 1, and channels 8-15 map to the second file in the pair from rank 8 down to rank 1. Example: mux 1 channel 0 is `a8`, channel 7 is `a1`, channel 8 is `b8`, and channel 15 is `b1`.
+
+Storage muxes use the same vertical top-to-bottom rank order on both sides. Channels 0-7 are the storage column immediately adjacent to the board: `R1`, `R2`, `B1`, `B2`, `N1`, `N2`, `Q`, `K`. Channels 8-15 are the outer pawn storage column: `P1`, `P2`, `P3`, `P4`, `P5`, `P6`, `P7`, `P8`.
 
 ---
 
@@ -100,7 +103,9 @@ GameController           — Orchestrates engine ↔ physical board
   ├── PhysicalBoard      — Bitboard-based physical state tracker
   ├── GrblController     — Serial comms, G-code dispatch, capture tracking
   ├── BoardScanner       — Hall effect sensor polling, move detection
-  └── PieceTracker       — Maps individual piece identity to board squares
+  ├── PieceTracker       — Maps individual piece identity to board squares
+  ├── DisplayController  — 128×64 I2C OLED status messages
+  └── ButtonController   — Active-low start/stop/reset operator inputs
 
 BoardInterpreter         — Path planning
   ├── Piece-specific paths (sliding, knight L-paths, etc.)
@@ -179,6 +184,7 @@ kirin/
     ├── game_controller_test.cpp
     ├── engine_test.cpp
     ├── board_scanner_test.cpp
+    ├── ui_controller_test.cpp
     ├── generate_test_report.py
     └── TEST_RESULTS.md
 ```
@@ -194,8 +200,8 @@ cmake ..
 # Configure Debug build
 cmake .. -DCMAKE_BUILD_TYPE=Debug
 
-# Enable GPIO sensor support (Raspberry Pi only)
-cmake .. -DHAS_GPIOD=ON
+# Enable GPIO sensor/button support (Raspberry Pi only)
+cmake .. -DCMAKE_CXX_FLAGS="-DHAS_GPIOD"
 
 # Build
 cmake --build .
@@ -230,6 +236,7 @@ The project has a comprehensive test suite covering all layers. Tests are run vi
 | `game_controller_test` | Coordinate conversion, piece-type mapping, PhysicalBoard sync, `parseBoardMove`, `isGameOver`, special moves, PieceTracker integration | 114 |
 | `engine_test` | Perft node counts (4 positions × up to depth 4), evaluation sanity, tactical position structure, skill-level globals, repetition detection | 46 |
 | `board_scanner_test` | Sensor move detection, capture disambiguation via storage slots, castling/en passant detection, PieceTracker state tracking, simulation mode | 88 |
+| `ui_controller_test` | DisplayController and ButtonController simulation-mode behavior | 27 |
 
 ### Test design notes
 
@@ -305,10 +312,10 @@ Example dry-run output:
   Move 1.  e2e4
 ══════════════════════════════════════════════════════════════
   $H                              ; HOME (seek limit switches)
-  G1 X4.00 Y14.00                 ; MOVE
+  G1 X6.50 Y10.42                 ; MOVE
   M3                              ; MAGNET ON
   G4 P0.5                         ; DWELL (settle)
-  G1 X4.00 Y10.00                 ; MOVE
+  G1 X9.50 Y10.42                 ; MOVE
   M5                              ; MAGNET OFF
   ...
 ```
@@ -344,6 +351,8 @@ Example dry-run output:
 | `board_interpreter.h/.cpp` | Path planning, blocker detection, A\* routing |
 | `board_scanner.h/.cpp` | Hall effect sensor polling via multiplexed GPIO, move detection, capture disambiguation |
 | `piece_tracker.h` | Per-square piece identity tracking for storage-slot-based capture matching |
+| `display_controller.h/.cpp` | 128×64 I2C OLED status rendering and `--oled-test` support |
+| `button_controller.h/.cpp` | Active-low GPIO start/stop/reset button polling |
 
 **`tests/`**
 
@@ -354,6 +363,7 @@ Example dry-run output:
 | `game_controller_test.cpp` | Move encoding/decoding, coordinate conversion, physical board state, special moves |
 | `engine_test.cpp` | Perft, evaluation sanity, tactical positions, skill level, repetition detection |
 | `board_scanner_test.cpp` | Sensor move detection, storage-slot capture disambiguation, PieceTracker integration |
+| `ui_controller_test.cpp` | DisplayController and ButtonController simulation-mode behavior |
 | `generate_test_report.py` | Runs all binaries and writes `TEST_RESULTS.md` |
 
 ---
@@ -366,20 +376,51 @@ The codebase uses two coordinate systems that are explicitly converted at the en
 
 **BoardCoord** (row, col): `row 0 = rank 8`, `col 0 = file a` — matches the physical board orientation as viewed from white's side.
 
-**Physical position** (inches): origin at the gantry home position (bottom-left); X increases right, Y increases up.
+**Physical position** (inches): calibrated G54 work frame used by GRBL moves. In the current software calibration, ranks advance along +X and files advance along +Y: `a1 = (5.000, 4.420)`, `a8 = (15.500, 4.420)`, `h1 = (5.000, 14.920)`, and `h8 = (15.500, 14.920)`.
 
 ---
 
 ## Storage Zone Layout
 
-Captured pieces are stored in two zones flanking the board. Each zone has two columns (back-rank pieces / pawns) with 2-inch vertical spacing matching the board squares. Each storage slot is monitored by a dedicated hall effect sensor, enabling the system to detect *which specific slot* a captured piece was placed in.
+Captured pieces are stored in two zones flanking the board. Each zone has two columns (back-rank pieces / pawns) with 1.5-inch vertical spacing matching the board squares. Each storage slot is monitored by a dedicated hall effect sensor, enabling the system to detect *which specific slot* a captured piece was placed in.
 
-| Zone | X center | Y range | Contents |
+| Zone | Side | Mux | Contents |
 |---|---|---|---|
-| Black storage (left) | 1.5" | 4" – 18" | White pieces taken by black |
-| White storage (right) | 20.5" | 4" – 18" | Black pieces taken by white |
+| Black storage | Left of a-file | 0 | White pieces taken by black |
+| White storage | Right of h-file | 5 | Black pieces taken by white |
 
-Within each zone, slots are assigned to specific starting pieces (rook-a through rook-h for back-rank pieces, pawn-a through pawn-h for pawns). The `PieceTracker` maps each piece's current board square to its starting slot, allowing the system to verify that captured pieces are placed in the correct storage position.
+Within each zone, slots are assigned to specific starting pieces. The inner column is immediately adjacent to the board; the outer column is farther from the board.
+
+| Channel | Inner column slot | Channel | Outer column slot |
+|---|---|---|---|
+| 0 | R1 | 8 | P1 |
+| 1 | R2 | 9 | P2 |
+| 2 | B1 | 10 | P3 |
+| 3 | B2 | 11 | P4 |
+| 4 | N1 | 12 | P5 |
+| 5 | N2 | 13 | P6 |
+| 6 | Q | 14 | P7 |
+| 7 | K | 15 | P8 |
+
+The slot names map to original piece identity: `R1/R2` are the a/h rooks, `B1/B2` are the c/f bishops, `N1/N2` are the b/g knights, `Q` is the d-file queen, `K` is the e-file king, and `P1`-`P8` are the a-file through h-file pawns. The `PieceTracker` maps each piece's current board square to this starting slot so captures can be matched against the exact storage sensor.
+
+---
+
+## Display and Button UI
+
+Physical mode can initialize a 128×64 SSD1306-compatible OLED over I2C using `/dev/i2c-1` at address `0x3C`. Wiring uses the Raspberry Pi I2C pins: SDA on GPIO2 / physical pin 3, SCL on GPIO3 / physical pin 5. The `--oled-test` command-line flag initializes the display and shows a test screen without starting a physical game.
+
+The display reports high-level physical-mode states: booting, hardware ready, waiting for the human move, engine thinking, executing a move, illegal board state, wrong storage slot, game over, and idle.
+
+Three active-low buttons are available at safe command prompts:
+
+| Button | GPIO | Meaning |
+|---|---|---|
+| Start | GPIO20 / physical pin 38 | If idle, start `play white`; if a game is active, run `go` |
+| Stop | GPIO21 / physical pin 40 | If a game is active, stop it; if idle, exit physical mode |
+| Reset | GPIO24 / physical pin 18 | Home the gantry |
+
+Buttons are polled only at safe physical-mode prompts. They are not an asynchronous emergency stop and are not polled during blocking gantry motion, engine search, or `waitForHumanMove`.
 
 ---
 
@@ -396,7 +437,7 @@ Within each zone, slots are assigned to specific starting pieces (rook-a through
 | Hall effect sensor scanning (96 sensors, 6 muxes) | ✅ Complete |
 | Sensor-based human move detection | ✅ Complete |
 | Storage-slot capture disambiguation (PieceTracker) | ✅ Complete |
-| Comprehensive test suite (300+ assertions) | ✅ Complete |
+| Comprehensive test suite (329 assertions) | ✅ Complete |
 | CI test report via GitHub Actions | ✅ Complete |
 | Physical board testing | 🔧 In progress |
 | En passant path planning | 🔧 In progress |

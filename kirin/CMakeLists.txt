@@ -24,6 +24,9 @@ cmake_minimum_required(VERSION 3.10)
 #   │   │
 #   │   ├── hardware/           Physical board control
 #   │   │   ├── board_interpreter.cpp/h
+#   │   │   ├── board_scanner.cpp/h
+#   │   │   ├── button_controller.cpp/h
+#   │   │   ├── display_controller.cpp/h
 #   │   │   ├── game_controller.cpp/h
 #   │   │   └── gantry_controller.cpp/h
 #   │   │
@@ -34,6 +37,8 @@ cmake_minimum_required(VERSION 3.10)
 #       ├── board_interpreter_test.cpp
 #       ├── game_controller_test.cpp
 #       ├── engine_test.cpp
+#       ├── board_scanner_test.cpp
+#       ├── ui_controller_test.cpp
 #       ├── generate_test_report.py   <- produces TEST_RESULTS.md
 #       └── TEST_RESULTS.md           <- auto-generated, commit to repo
 #
@@ -190,6 +195,14 @@ target_include_directories(board_scanner_test PRIVATE
 target_link_libraries(board_scanner_test PRIVATE kirin_hardware kirin_engine)
 add_test(NAME BoardScannerTest COMMAND board_scanner_test)
 
+# UI controller test (OLED/button logic - no hardware required)
+add_executable(ui_controller_test tests/ui_controller_test.cpp)
+target_include_directories(ui_controller_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/hardware
+)
+target_link_libraries(ui_controller_test PRIVATE kirin_hardware)
+add_test(NAME UIControllerTest COMMAND ui_controller_test)
+
 # ============================================
 # Test Report (Markdown for GitHub)
 # ============================================
@@ -206,6 +219,7 @@ add_custom_target(test_report
         game_controller_test
         engine_test
         board_scanner_test
+        ui_controller_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running all tests and writing tests/TEST_RESULTS.md"
 )

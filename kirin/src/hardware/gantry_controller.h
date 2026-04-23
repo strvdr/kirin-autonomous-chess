@@ -15,23 +15,23 @@
 *    You should have received a copy of the GNU General Public License
 *    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 *
-*              22" rail travel
+*              22" physical rail travel
 *    |<------------------------------->|
 *    |                                 |
 *    |  +-+ +---------------------+ +-+|
 *    |  |B| |                     | |W||
-*    |  |L| |     16" board       | |H||
+*    |  |L| |     12" board       | |H||
 *    |  |A| |                     | |I||
 *    |  |C| |      8x8 grid       | |T||
 *    |  |K| |                     | |E||
 *    |  +-+ +---------------------+ +-+|
-*    |  3.0"         16"          3.0" |
-*    |<--->|<------------------->|<--->|
+*    |  3.0"  .5"    12"    .5"  3.0" |
+*    |<---------- 19" occupied width ---------->|
 *       ^                            ^
 *       |                            |
 *     Black captures            White captures
-*     X = 1.5" (center)         X = 20.5" (center)
-*     Y = 4" to 18"             Y = 4" to 18"
+*     X = 1.5", 3.0"            X = 17.5", 19.0"
+*     Y = 4.420" to 14.920"     Y = 4.420" to 14.920"
 */
 
 #ifndef KIRIN_GANTRY_CONTROLLER_H

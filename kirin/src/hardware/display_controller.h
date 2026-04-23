@@ -37,6 +37,7 @@ class DisplayController {
 private:
     int fd;
     bool ready;
+    bool simulationMode;
     std::string devicePath;
     uint8_t address;
     int width;
@@ -67,8 +68,12 @@ public:
     ~DisplayController();
 
     bool init();
+    void enableSimulation();
     void shutdown();
     bool isReady() const { return ready; }
+    const uint8_t* getFramebuffer() const { return framebuffer; }
+    int framebufferSize() const { return DEFAULT_WIDTH * DEFAULT_HEIGHT / 8; }
+    bool isPixelSet(int x, int y) const;
 
     bool clear();
     bool showMessage(const DisplayMessage& message);
