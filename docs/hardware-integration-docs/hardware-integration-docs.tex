@@ -73,6 +73,7 @@
 \fancyhf{}
 \fancyhead[L]{\leftmark}
 \fancyhead[R]{\thepage}
+\setlength{\headheight}{14pt}
 \renewcommand{\headrulewidth}{0.4pt}
 
 % Note box
@@ -205,8 +206,8 @@ Serial port & USB connection to GRBL controller \\
 
 \begin{lstlisting}[language=bash]
 # Clone the repository
-git clone https://github.com/strvdr/first-move-robotics.git
-cd first-move-robotics/kirin
+git clone https://github.com/strvdr/kirin-autonomous-chess.git
+cd kirin-autonomous-chess/kirin
 
 # Create build directory
 mkdir build && cd build
@@ -216,7 +217,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Release \
          -DCMAKE_CXX_FLAGS="-DHAS_GPIOD"
 
 # Build
-make -j$(nproc)
+cmake --build . --parallel
 \end{lstlisting}
 
 \warningbox{The \texttt{-DHAS\_GPIOD} flag is essential. Without it, the board scanner compiles in stub mode and all GPIO calls are no-ops. The build will succeed either way, but the sensors will not work without this flag.}
@@ -242,7 +243,7 @@ cd build
 ctest --output-on-failure
 
 # Or run individually
-./board_scanner_test     # Sensor move detection logic (88 tests)
+./board_scanner_test     # Sensor move detection logic
 ./ui_controller_test     # OLED/button controller logic
 ./game_controller_test   # Engine-to-physical bridge
 ./board_interpreter_test # Path planning

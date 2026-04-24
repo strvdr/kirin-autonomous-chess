@@ -73,6 +73,7 @@
 \fancyhf{}
 \fancyhead[L]{\leftmark}
 \fancyhead[R]{\thepage}
+\setlength{\headheight}{14pt}
 \renewcommand{\headrulewidth}{0.4pt}
 
 % Function/method documentation macro
@@ -106,12 +107,12 @@
 \title{%
     \vspace{-1cm}
     \rule{\textwidth}{1pt}\\[0.5cm]
-    {\Huge\bfseries First Move Robotics}\\[0.3cm]
+    {\Huge\bfseries Kirin}\\[0.3cm]
     {\Large Board Interpreter Documentation}\\[0.3cm]
     \rule{\textwidth}{1pt}\\[1cm]
-    {\large Version 0.3.1 (Development Build)}
+    {\large Current Repository Build}
 }
-\author{Strydr Silverberg\\strydr\_silverberg@mines.edu\\\\Colorado School of Mines, Class of 2026}
+\author{Strydr Silverberg\\strydr\_silverberg@mines.edu\\\\Colorado School of Mines}
 \date{\today}
 
 \begin{document}
@@ -139,7 +140,7 @@
 
 This document provides comprehensive documentation for the \textbf{Board Interpreter} module of the Kirin autonomous chess system. The board interpreter is the translation layer between the abstract chess world of the Kirin engine and the physical reality of the robotic gantry that moves pieces on the board.
 
-When the Kirin engine decides on a move, it communicates that decision as a standard algebraic chess move (e.g., \texttt{e2e4}). The board interpreter's job is to answer the question: \emph{how does the robot actually execute that move on a physical board with pieces that may be in the way?} This involves computing geometrically valid physical paths for the magnetic gantry head, detecting pieces that block those paths, temporarily relocating blockers to safe parking squares, and finally generating a complete ordered action plan for the gantry controller to execute step by step.
+When the Kirin engine decides on a move, it communicates that decision as a UCI move string (e.g., \texttt{e2e4}). The board interpreter's job is to answer the question: \emph{how does the robot actually execute that move on a physical board with pieces that may be in the way?} This involves computing geometrically valid physical paths for the magnetic gantry head, detecting pieces that block those paths, temporarily relocating blockers to safe parking squares, and finally generating a complete ordered action plan for the gantry controller to execute step by step.
 
 \section{Responsibilities}
 

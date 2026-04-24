@@ -72,6 +72,7 @@
 \fancyhf{}
 \fancyhead[L]{\leftmark}
 \fancyhead[R]{\thepage}
+\setlength{\headheight}{14pt}
 \renewcommand{\headrulewidth}{0.4pt}
 
 % Chess move formatting
@@ -114,12 +115,12 @@
 \title{%
     \vspace{-1cm}
     \rule{\textwidth}{1pt}\\[0.5cm]
-    {\Huge\bfseries First Move Robotics}\\[0.3cm]
-    {\Large Software Documentation}\\[0.3cm]
+    {\Huge\bfseries Kirin}\\[0.3cm]
+    {\Large Chess Engine Documentation}\\[0.3cm]
     \rule{\textwidth}{1pt}\\[1cm]
-    {\large Version 0.3.1 (Development Build)}
+    {\large Current Repository Build}
 }
-\author{Strydr Silverberg\\strydr\_silverberg@mines.edu\\\\Colorado School of Mines, Class of 2026}
+\author{Strydr Silverberg\\strydr\_silverberg@mines.edu\\\\Colorado School of Mines}
 \date{\today}
 
 \begin{document}
@@ -145,7 +146,7 @@
 
 \section{Overview}
 
-This document provides comprehensive documentation for the \textbf{Kirin Chess Engine}. Kirin is a chess engine written in C++ and an integral part of the \textbf{First Move Robotics} autonomous chess board project.
+This document provides comprehensive documentation for the \textbf{Kirin Chess Engine}. Kirin is a chess engine written in C++ and an integral part of the \textbf{Kirin} autonomous chess system.
 
 Kirin is the computational engine powering an autonomous chess system designed to deliver a complete single-player experience. By integrating intelligent move generation with a physical board capable of independent piece manipulation, the system eliminates the need for a human opponent while preserving the tactile satisfaction of over-the-board play.
 
@@ -170,11 +171,11 @@ Kirin is the computational engine powering an autonomous chess system designed t
 \toprule
 \textbf{Component} & \textbf{Requirement} \\
 \midrule
-Operating System & Linux (primary), Windows, macOS \\
+Operating System & Linux (primary development target) \\
 Memory & Minimum 256 MB RAM \\
 Processor & Any modern x86-64 CPU \\
-Compiler & GCC or Clang with C++11 support \\
-Dependencies & POSIX libraries (unistd.h, sys/time.h) \\
+Compiler & GCC or Clang with C++17 support \\
+Dependencies & CMake 3.10+, POSIX headers (\texttt{unistd.h}, \texttt{sys/time.h}) \\
 \bottomrule
 \end{tabular}
 \caption{Minimum system requirements}
@@ -189,16 +190,16 @@ Dependencies & POSIX libraries (unistd.h, sys/time.h) \\
 Clone the repository and build:
 
 \begin{lstlisting}[language=bash]
-git clone git@github.com:strvdr/first-move-robotics.git
-cd engine
-mkdir -p build
-cd build && cmake .. && make
-./kirin
+git clone git@github.com:strvdr/kirin-autonomous-chess.git
+cd kirin-autonomous-chess/kirin
+cmake -S . -B build
+cmake --build build
+./build/kirin
 \end{lstlisting}
 
 \section{Pre-built Binaries}
 
-Download the latest release from the releases page.
+Build from source is the primary supported workflow for the current repository state.
 
 \section{Start Playing}
 Kirin is a UCI compatible chess engine, so configuring something like \href{https://github.com/lichess-bot-devs/lichess-bot}{Lichess Bot} is very simple. I have also created a chess CLI tool for viewing and playing games called \href{https://github.com/strvdr/zduel}{zduel} which you can use to play games against Kirin from the terminal.\\
