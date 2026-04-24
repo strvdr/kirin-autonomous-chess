@@ -35,6 +35,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <vector>
 
 // Hardware layer (brings in board_interpreter.h / gantry_controller.h)
 #include "../src/hardware/game_controller.h"
@@ -316,6 +318,77 @@ static void testEngineCaptureRequiresExactTracker() {
 
         TEST_ASSERT(gc.executeEngineMove(d4xe5) == false,
                     "engine capture is rejected with unknown tracker state");
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4e. Capture G-code must route to the exact tracked slot
+// ─────────────────────────────────────────────────────────────
+static void testCaptureGcodeUsesExactSlot() {
+    printHeader("Capture G-code exact slot routing");
+
+    std::vector<std::string> gcode = Gantry::generateCaptureGcode(
+        BoardCoord::fromFEN("e5"),
+        false,
+        Gantry::SLOT_P5
+    );
+
+    bool pickupFromE5 = false;
+    bool dropAtBlackP5 = false;
+    bool noPlaceholderP1 = true;
+
+    for (const std::string& cmd : gcode) {
+        if (cmd == "G1 X11.000 Y10.420 F1000") pickupFromE5 = true;
+        if (cmd == "G1 X1.500 Y10.420 F1000") dropAtBlackP5 = true;
+        if (cmd == "G1 X1.500 Y4.420 F1000") noPlaceholderP1 = false;
+    }
+
+    TEST_ASSERT(pickupFromE5, "capture starts from occupied board square e5");
+    TEST_ASSERT(dropAtBlackP5, "captured black e-pawn routes to SLOT_P5");
+    TEST_ASSERT(noPlaceholderP1, "capture path does not fall back to SLOT_P1");
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4f. Gantry refuses capture plans without exact slot identity
+// ─────────────────────────────────────────────────────────────
+static void testGantryRejectsCaptureWithoutSlot() {
+    printHeader("Gantry rejects slotless capture");
+
+    MovePlan plan;
+    plan.isValid = true;
+    plan.primaryMove = PhysicalMove(
+        BoardCoord::fromFEN("e4"),
+        BoardCoord::fromFEN("d5"),
+        PAWN,
+        true
+    );
+    plan.primaryPath.append(BoardCoord::fromFEN("d5"));
+
+    Gantry::GrblController gantry;
+    gantry.enableDryRun();
+
+    TEST_ASSERT(!gantry.executeMove(plan, false, -1),
+                "capture execution fails without exact storage slot");
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4g. GRBL timing and motion-mode commands
+// ─────────────────────────────────────────────────────────────
+static void testGrblTimingAndMotionSetup() {
+    printHeader("GRBL timing and motion setup");
+
+    TEST_ASSERT(Gantry::dwell(100) == std::string("G4 P0.100"),
+                "100ms dwell is encoded as GRBL seconds");
+    TEST_ASSERT(Gantry::dwell(750) == std::string("G4 P0.750"),
+                "750ms dwell is encoded as GRBL seconds");
+
+    std::vector<std::string> setup = Gantry::motionSetupCommands();
+    TEST_ASSERT(setup.size() == 4, "motion setup has four commands");
+    if (setup.size() == 4) {
+        TEST_ASSERT(setup[0] == "G20", "motion setup selects inches");
+        TEST_ASSERT(setup[1] == "G90", "motion setup selects absolute positioning");
+        TEST_ASSERT(setup[2] == "G94", "motion setup selects units-per-minute feed");
+        TEST_ASSERT(setup[3] == "M5", "motion setup leaves magnet off");
     }
 }
 
@@ -623,6 +696,9 @@ int main() {
     testTrackerPersistsAcrossSync();
     testTrackerValidity();
     testEngineCaptureRequiresExactTracker();
+    testCaptureGcodeUsesExactSlot();
+    testGantryRejectsCaptureWithoutSlot();
+    testGrblTimingAndMotionSetup();
     testParseBoardMove();
     testIsGameOver();
     testGameFlow();

@@ -64,6 +64,16 @@ endif()
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "C++ Standard: ${CMAKE_CXX_STANDARD}")
 
+option(KIRIN_ENABLE_GPIOD "Enable Raspberry Pi GPIO support through libgpiod v2" OFF)
+
+# Backward compatibility for the old build style:
+#   cmake .. -DCMAKE_CXX_FLAGS="-DHAS_GPIOD"
+# or:
+#   cmake .. -DHAS_GPIOD=ON
+if(CMAKE_CXX_FLAGS MATCHES "HAS_GPIOD" OR (DEFINED HAS_GPIOD AND HAS_GPIOD))
+    set(KIRIN_ENABLE_GPIOD ON)
+endif()
+
 # ============================================
 # Source Files - Engine
 # ============================================
@@ -131,15 +141,18 @@ target_include_directories(kirin_hardware PUBLIC
 )
 target_link_libraries(kirin_hardware PUBLIC kirin_engine)
 
-# Link libgpiod when GPIO support is enabled
-if(CMAKE_CXX_FLAGS MATCHES "HAS_GPIOD" OR DEFINED HAS_GPIOD)
-    find_library(GPIOD_LIB gpiod)
-    if(GPIOD_LIB)
-        target_link_libraries(kirin_hardware PUBLIC ${GPIOD_LIB})
-        message(STATUS "libgpiod found: ${GPIOD_LIB}")
-    else()
-        message(WARNING "HAS_GPIOD defined but libgpiod not found — GPIO calls will fail at link time")
+# Link libgpiod when GPIO support is enabled.
+if(KIRIN_ENABLE_GPIOD)
+    find_library(GPIOD_LIB NAMES gpiod)
+    if(NOT GPIOD_LIB)
+        message(FATAL_ERROR "KIRIN_ENABLE_GPIOD=ON but libgpiod was not found")
     endif()
+
+    target_compile_definitions(kirin_hardware PUBLIC HAS_GPIOD)
+    target_link_libraries(kirin_hardware PUBLIC ${GPIOD_LIB})
+    message(STATUS "GPIO support enabled with libgpiod: ${GPIOD_LIB}")
+else()
+    message(STATUS "GPIO support disabled; scanner/buttons require simulation mode")
 endif()
 
 # ============================================

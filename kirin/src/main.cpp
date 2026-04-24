@@ -133,7 +133,7 @@ void printHelp() {
     printf("\n");
     printf("Simulation Mode:\n");
     printf("  Interactive move-by-move simulation. Enter moves in UCI format\n");
-    printf("  and inspect the generated G-code and move plans.\n");
+    printf("  and inspect the same dry-run G-code path used by hardware mode.\n");
     printf("\n");
     printf("Dry Run Mode:\n");
     printf("  Plays a complete engine-vs-engine game automatically. Every\n");
@@ -596,15 +596,6 @@ void runPhysicalMode(const char* port) {
                 continue;
             }
 
-            if (!controller.hasExactTracker()) {
-                printf("Error: Sensor-based play requires exact piece identity tracking.\n");
-                printf("  The current position does not have trusted tracker state.\n");
-                printf("  Start a new game or use 'newgame' for manual move entry.\n");
-                showDisplay(displayPtr, DisplayStatus::IllegalBoardState,
-                            "Tracker unknown", "Start new game");
-                continue;
-            }
-            
             bool engineWhite = true;
             if (strstr(input, "black")) {
                 engineWhite = false;
@@ -955,11 +946,13 @@ void runSimulationMode() {
     
     // Set up starting position
     parseFEN(startPosition);
-    
-    // Create physical board tracker
-    PhysicalBoard physBoard;
-    extern unsigned long long occupancy[3];
-    physBoard.setOccupancy(occupancy[both]);
+
+    // Use the same GameController -> GrblController dry-run path as real
+    // hardware so simulation cannot drift into a placeholder-only pipeline.
+    GameController controller;
+    controller.getGantry().enableDryRun();
+    controller.initTrackerForStartingPosition();
+    controller.syncWithEngine();
     
     char input[256];
     printf("Ready. Enter moves in UCI format (e.g., 'e2e4'), or 'quit' to exit.\n\n");
@@ -991,60 +984,19 @@ void runSimulationMode() {
             continue;
         }
         
-        // Convert to physical move
-        PhysicalMove physMove = engineToPhysicalMove(move);
-        
         printf("\n=== Move: %s ===\n", input);
-        printf("From: (%d, %d) -> To: (%d, %d)\n", 
-               physMove.from.row, physMove.from.col,
-               physMove.to.row, physMove.to.col);
-        printf("Piece type: %d, Capture: %s\n", 
-               physMove.pieceType, physMove.isCapture ? "yes" : "no");
-        
-        // Plan the move
-        MovePlan plan = planMove(physBoard, physMove);
-        
-        if (!plan.isValid) {
-            printf("Error planning move: %s\n", 
-                   plan.errorMessage ? plan.errorMessage : "unknown");
+
+        if (!controller.executeEngineMove(move)) {
+            printf("Error executing simulated hardware move.\n");
             continue;
         }
-        
-        // Print the plan
-        printMovePlan(plan);
-        
-        // Generate G-code
-        bool capturedIsWhite = false;
-        PieceType capturedType = UNKNOWN;
-        
-        if (getCapturedPiece(move)) {
-            int captured = getCapturedPiece(move);
-            capturedType = engineToPhysicalPiece(captured);
-            capturedIsWhite = captured < 6;
-        }
-        
-        std::vector<std::string> gcode = Gantry::generateMovePlanGcode(
-            plan, capturedIsWhite, capturedType);
 
-        if (physMove.isCapture) {
-            printf("Note: Simulation capture G-code uses a placeholder storage slot.\n");
-            printf("  Real hardware execution routes captures via exact tracker identity.\n");
+        if (!makeMove(move, allMoves)) {
+            printf("Engine rejected move after simulated hardware execution. Aborting simulation.\n");
+            break;
         }
-        
-        printf("\n--- Generated G-code ---\n");
-        for (const auto& cmd : gcode) {
-            printf("  %s\n", cmd.c_str());
-        }
-        printf("------------------------\n");
-        
-        // Make the move in the engine
-        makeMove(move, allMoves);
-        
-        // Update physical board
-        if (physMove.isCapture) {
-            physBoard.clearSquare(physMove.to);
-        }
-        physBoard.movePiece(physMove.from, physMove.to);
+        controller.updateTracker(move);
+        controller.syncWithEngine();
         
         // Engine response
         printf("\nEngine thinking...\n");
@@ -1065,36 +1017,17 @@ void runSimulationMode() {
             }
             printf("\n");
             
-            // Execute engine move
-            PhysicalMove enginePhysMove = engineToPhysicalMove(bestMove);
-            MovePlan enginePlan = planMove(physBoard, enginePhysMove);
-            
-            if (enginePlan.isValid) {
-                printMovePlan(enginePlan);
-                
-                std::vector<std::string> engineGcode = Gantry::generateMovePlanGcode(
-                    enginePlan, 
-                    getCapturedPiece(bestMove) ? (getCapturedPiece(bestMove) < 6) : false,
-                    getCapturedPiece(bestMove) ? engineToPhysicalPiece(getCapturedPiece(bestMove)) : UNKNOWN);
+            if (!controller.executeEngineMove(bestMove)) {
+                printf("Error executing simulated engine hardware move.\n");
+                continue;
+            }
 
-                if (enginePhysMove.isCapture) {
-                    printf("Note: Simulation capture G-code uses a placeholder storage slot.\n");
-                    printf("  Real hardware execution routes captures via exact tracker identity.\n");
-                }
-                
-                printf("\n--- Engine Move G-code ---\n");
-                for (const auto& cmd : engineGcode) {
-                    printf("  %s\n", cmd.c_str());
-                }
-                printf("--------------------------\n");
+            if (!makeMove(bestMove, allMoves)) {
+                printf("Engine rejected its own selected move. Aborting simulation.\n");
+                break;
             }
-            
-            makeMove(bestMove, allMoves);
-            
-            if (enginePhysMove.isCapture) {
-                physBoard.clearSquare(enginePhysMove.to);
-            }
-            physBoard.movePiece(enginePhysMove.from, enginePhysMove.to);
+            controller.updateTracker(bestMove);
+            controller.syncWithEngine();
         }
     }
     

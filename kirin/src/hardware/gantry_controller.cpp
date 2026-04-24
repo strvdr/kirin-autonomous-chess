@@ -155,8 +155,17 @@ std::string magnetOff() {
 
 std::string dwell(int milliseconds) {
     char buf[32];
-    snprintf(buf, sizeof(buf), "G4 P%d", milliseconds);
+    snprintf(buf, sizeof(buf), "G4 P%.3f", milliseconds / 1000.0);
     return std::string(buf);
+}
+
+std::vector<std::string> motionSetupCommands() {
+    return {
+        "G20",  // inches
+        "G90",  // absolute positioning
+        "G94",  // feed rate in units/minute
+        magnetOff()
+    };
 }
 
 std::vector<std::string> generatePickAndPlace(const Position& from, 
@@ -217,90 +226,6 @@ std::vector<std::string> generateCaptureGcode(const BoardCoord& square,
     return gcode;
 }
 
-std::vector<std::string> generateMovePlanGcode(const MovePlan& plan,
-                                                bool capturedPieceIsWhite,
-                                                PieceType capturedPieceType) {
-    std::vector<std::string> gcode;
-    (void)capturedPieceType;
-    
-    if (!plan.isValid) {
-        return gcode;
-    }
-    
-    // Step 1: If capture, move captured piece to capture zone first
-    // Note: The actual slot index must be determined by the caller (GrblController)
-    // which tracks how many pieces have been captured. This function just generates
-    // the G-code given a slot index. For now, we use a placeholder that will be
-    // replaced by the caller with the actual slot.
-    if (plan.primaryMove.isCapture) {
-        // Placeholder exact slot for legacy simulation paths that do not
-        // currently track identity. Real hardware execution uses the
-        // identity-aware GrblController::executeMove path.
-            std::vector<std::string> captureGcode = generateCaptureGcode(
-                plan.primaryMove.to,
-                capturedPieceIsWhite,
-                SLOT_P1
-            );
-        gcode.insert(gcode.end(), captureGcode.begin(), captureGcode.end());
-    }
-    
-    // Step 2: Execute all blocker relocations
-    for (const RelocationPlan& reloc : plan.relocations) {
-        Position from = toPhysical(reloc.from);
-        
-        // Pick up blocker
-        gcode.push_back(moveCommand(from));
-        gcode.push_back(magnetOn());
-        gcode.push_back(dwell(100));
-        
-        // Follow relocation path
-        std::vector<std::string> pathGcode = generatePathGcode(from, reloc.path);
-        gcode.insert(gcode.end(), pathGcode.begin(), pathGcode.end());
-        
-        // Release at parking spot
-        gcode.push_back(magnetOff());
-        gcode.push_back(dwell(100));
-    }
-    
-    // Step 3: Execute primary move
-    {
-        Position from = toPhysical(plan.primaryMove.from);
-        
-        // Pick up primary piece
-        gcode.push_back(moveCommand(from));
-        gcode.push_back(magnetOn());
-        gcode.push_back(dwell(100));
-        
-        // Follow primary path
-        std::vector<std::string> pathGcode = generatePathGcode(from, plan.primaryPath);
-        gcode.insert(gcode.end(), pathGcode.begin(), pathGcode.end());
-        
-        // Release at destination
-        gcode.push_back(magnetOff());
-        gcode.push_back(dwell(100));
-    }
-    
-    // Step 4: Restore all blockers to original positions
-    for (const RelocationPlan& restore : plan.restorations) {
-        Position from = toPhysical(restore.from);
-        Position to = toPhysical(restore.to);
-        
-        // Pick up from parking spot
-        gcode.push_back(moveCommand(from));
-        gcode.push_back(magnetOn());
-        gcode.push_back(dwell(100));
-        
-        // Move back to original square
-        gcode.push_back(moveCommand(to));
-        
-        // Release
-        gcode.push_back(magnetOff());
-        gcode.push_back(dwell(100));
-    }
-    
-    return gcode;
-}
-
 std::vector<std::string> generateNewGameSetup() {
     std::vector<std::string> gcode;
     
@@ -326,9 +251,7 @@ std::vector<std::string> generateNewGameSetup() {
 
 GrblController::GrblController() 
     : serialFd(-1), connected(false), dryRunMode(false),
-      currentPos(0, 0), magnetEngaged(false),
-      whitePawnsCaptured(0), whitePiecesCaptured(0),
-      blackPawnsCaptured(0), blackPiecesCaptured(0) {
+      currentPos(0, 0), magnetEngaged(false) {
 }
 
 void GrblController::enableDryRun() {
@@ -340,13 +263,6 @@ void GrblController::enableDryRun() {
 
 GrblController::~GrblController() {
     disconnect();
-}
-
-void GrblController::resetCaptureSlots() {
-    whitePawnsCaptured = 0;
-    whitePiecesCaptured = 0;
-    blackPawnsCaptured = 0;
-    blackPiecesCaptured = 0;
 }
 
 #if HAS_SERIAL
@@ -609,6 +525,9 @@ static const char* annotateGcode(const std::string& cmd) {
     if (cmd == "M3")                    return "  ; MAGNET ON";
     if (cmd == "M5")                    return "  ; MAGNET OFF";
     if (cmd == "$H")                    return "  ; HOME (seek limit switches)";
+    if (cmd == "G20")                   return "  ; UNITS inches";
+    if (cmd == "G90")                   return "  ; ABSOLUTE positioning";
+    if (cmd == "G94")                   return "  ; FEED units/min";
     if (cmd.substr(0, 2) == "G4")       return "  ; DWELL (settle)";
     if (cmd.substr(0, 2) == "G1")       return "  ; MOVE";
     return "";
@@ -623,8 +542,9 @@ int GrblController::getCommandTimeoutMs(const std::string& cmd) const {
 
     // Dwell waits for the requested settle time plus controller overhead.
     if (cmd.rfind("G4", 0) == 0) {
-        int dwellMs = 0;
-        if (sscanf(cmd.c_str(), "G4 P%d", &dwellMs) == 1) {
+        double dwellSeconds = 0.0;
+        if (sscanf(cmd.c_str(), "G4 P%lf", &dwellSeconds) == 1) {
+            int dwellMs = static_cast<int>(dwellSeconds * 1000.0);
             return dwellMs + 5000;
         }
         return 10000;
@@ -698,12 +618,19 @@ bool GrblController::sendCommands(const std::vector<std::string>& cmds) {
 }
 
 bool GrblController::home() {
+    if (!sendCommand("$H")) {
+        return false;
+    }
+
+    currentPos = Position(0, 0);
+    if (!sendCommands(motionSetupCommands())) {
+        return false;
+    }
+
     if (dryRunMode) {
-        printf("[DRY-RUN] $H                          ; HOME gantry to (0,0)\n");
-        currentPos = Position(0, 0);
         return true;
     }
-    return sendCommand("$H");
+    return true;
 }
 
 bool GrblController::moveTo(const Position& pos) {
@@ -732,12 +659,18 @@ bool GrblController::executeMove(const MovePlan& plan,
     if (!plan.isValid) {
         return false;
     }
+
+    if (plan.primaryMove.isCapture &&
+        (capturedSlot < SLOT_R1 || capturedSlot > SLOT_P8)) {
+        fprintf(stderr, "[GANTRY] Error: capture move requires an exact storage slot\n");
+        return false;
+    }
     
     std::vector<std::string> gcode;
     
     // Step 1: If capture, move captured piece to capture zone first
     // We generate this directly here to use the correct slot index
-    if (plan.primaryMove.isCapture && capturedSlot >= 0) {
+    if (plan.primaryMove.isCapture) {
         std::vector<std::string> captureGcode = generateCaptureGcode(
             plan.primaryMove.to,
             capturedPieceIsWhite,
@@ -785,7 +718,12 @@ bool GrblController::executeMove(const MovePlan& plan,
         gcode.push_back(magnetOn());
         gcode.push_back(dwell(100));
         
-        gcode.push_back(moveCommand(to));
+        if (restore.path.empty()) {
+            gcode.push_back(moveCommand(to));
+        } else {
+            std::vector<std::string> pathGcode = generatePathGcode(from, restore.path);
+            gcode.insert(gcode.end(), pathGcode.begin(), pathGcode.end());
+        }
         
         gcode.push_back(magnetOff());
         gcode.push_back(dwell(100));
@@ -800,8 +738,6 @@ bool GrblController::setupNewGame() {
     if (!sendCommands(gcode)) {
         return false;
     }
-    
-    resetCaptureSlots();
     return true;
 }
 

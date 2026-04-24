@@ -131,8 +131,8 @@ searchPosition(depth)
             → PhysicalMove { from, to, pieceType, isCapture, ... }
                 → planMove()
                     → Path (sequence of BoardCoords)
-                        → generateMovePlanGcode()
-                            → std::vector<std::string> G-code commands
+                        → GrblController::executeMove()
+                            → exact capture-slot routing + G-code commands
                                 → GrblController::sendCommands()
 ```
 
@@ -169,7 +169,7 @@ At levels 0 and 1, after the search completes, every legal root move is re-score
 
 ## Building
 
-The project uses CMake (3.10+) with a C++17 toolchain. Serial hardware support is conditionally compiled via the `HAS_SERIAL` preprocessor flag (set automatically on Linux). GPIO sensor support requires `libgpiod` and the `HAS_GPIOD` flag.
+The project uses CMake (3.10+) with a C++17 toolchain. Serial hardware support is conditionally compiled via the `HAS_SERIAL` preprocessor flag (set automatically on Linux). GPIO sensor support requires `libgpiod` and `-DKIRIN_ENABLE_GPIOD=ON`.
 
 ```
 kirin/
@@ -201,7 +201,7 @@ cmake ..
 cmake .. -DCMAKE_BUILD_TYPE=Debug
 
 # Enable GPIO sensor/button support (Raspberry Pi only)
-cmake .. -DCMAKE_CXX_FLAGS="-DHAS_GPIOD"
+cmake .. -DKIRIN_ENABLE_GPIOD=ON
 
 # Build
 cmake --build .
@@ -290,7 +290,7 @@ Additional commands include `scan` (display raw sensor readings), `diag` (full s
 
 ### Simulation Mode
 
-Interactive move-by-move walkthrough. Enter moves in UCI format and inspect the generated move plans and G-code — no hardware required.
+Interactive move-by-move walkthrough. Enter moves in UCI format and inspect the same dry-run G-code path used by physical mode, with no hardware required.
 
 ```bash
 ./kirin --simulate
@@ -312,9 +312,13 @@ Example dry-run output:
   Move 1.  e2e4
 ══════════════════════════════════════════════════════════════
   $H                              ; HOME (seek limit switches)
+  G20                             ; UNITS inches
+  G90                             ; ABSOLUTE positioning
+  G94                             ; FEED units/min
+  M5                              ; MAGNET OFF
   G1 X6.50 Y10.42                 ; MOVE
   M3                              ; MAGNET ON
-  G4 P0.5                         ; DWELL (settle)
+  G4 P0.100                       ; DWELL (settle)
   G1 X9.50 Y10.42                 ; MOVE
   M5                              ; MAGNET OFF
   ...

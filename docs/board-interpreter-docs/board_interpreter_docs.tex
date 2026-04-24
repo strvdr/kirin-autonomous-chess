@@ -626,7 +626,7 @@ This is the primary entry point for the board interpreter. It orchestrates all s
     \item \textbf{Copy the board} into \texttt{tempBoard}. All subsequent mutations happen on this copy.
     \item \textbf{Plan blocker relocations}: for each blocker call \texttt{planBlockerRelocation}, which recursively handles secondary blockers and appends \texttt{RelocationPlan} entries to \texttt{plan.relocations}.
     \item \textbf{Apply the primary move} to \texttt{tempBoard} so the restored post-move board state is available for restoration path planning.
-    \item \textbf{Plan restorations}: iterate over \texttt{relocations} in reverse order (LIFO). For each relocation, call \texttt{findClearPath} from the parking spot back to the piece's original square. If no clear path exists, the path is left empty and the gantry controller falls back to a direct move.
+    \item \textbf{Plan restorations}: iterate over \texttt{relocations} in reverse order (LIFO). For each relocation, call \texttt{findClearPath} from the parking spot back to the piece's original square. During execution, the gantry follows this restoration path when it exists; if no clear path exists, the path is left empty and the gantry controller falls back to a direct move.
     \item \textbf{Mark the plan valid} and return.
 \end{enumerate}
 

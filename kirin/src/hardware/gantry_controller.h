@@ -155,6 +155,7 @@ std::string moveCommand(const Position& pos);
 std::string magnetOn();
 std::string magnetOff();
 std::string dwell(int milliseconds);
+std::vector<std::string> motionSetupCommands();
 
 // Generate pick-and-place sequence (pickup from, move to, release)
 std::vector<std::string> generatePickAndPlace(const Position& from, 
@@ -163,12 +164,6 @@ std::vector<std::string> generatePickAndPlace(const Position& from,
 // Generate G-code for traversing a path (piece already held)
 std::vector<std::string> generatePathGcode(const Position& start,
                                             const Path& path);
-
-// Generate G-code for complete MovePlan (including captures, relocations)
-// capturedPieceType: the type of piece being captured (PAWN, KNIGHT, etc.)
-std::vector<std::string> generateMovePlanGcode(const MovePlan& plan,
-                                                bool capturedPieceIsWhite,
-                                                PieceType capturedPieceType);
 
 // Generate G-code to move a captured piece to an exact designated slot.
 std::vector<std::string> generateCaptureGcode(const BoardCoord& square,
@@ -187,13 +182,6 @@ private:
     bool dryRunMode;           // If true, print G-code instead of sending to serial
     Position currentPos;
     bool magnetEngaged;
-    
-    // Simplified capture tracking: count of pieces in each column
-    // Column 1 = back-rank pieces, Column 2 = pawns
-    int whitePawnsCaptured;    // 0-8
-    int whitePiecesCaptured;   // 0-8 (non-pawn pieces)
-    int blackPawnsCaptured;    // 0-8
-    int blackPiecesCaptured;   // 0-8 (non-pawn pieces)
     
     int getCommandTimeoutMs(const std::string& cmd) const;
     bool send(const std::string& cmd);
@@ -247,14 +235,6 @@ public:
     Position getCurrentPosition() const { return currentPos; }
     bool isMagnetEngaged() const { return magnetEngaged; }
     
-    // Capture counts (for debugging/display)
-    int getWhitePawnsCaptured() const { return whitePawnsCaptured; }
-    int getWhitePiecesCaptured() const { return whitePiecesCaptured; }
-    int getBlackPawnsCaptured() const { return blackPawnsCaptured; }
-    int getBlackPiecesCaptured() const { return blackPiecesCaptured; }
-    
-    // Reset for new game
-    void resetCaptureSlots();
 };
 
 } // namespace Gantry

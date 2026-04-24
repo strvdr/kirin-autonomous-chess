@@ -109,7 +109,7 @@
 \title{%
     \vspace{-1cm}
     \rule{\textwidth}{1pt}\\[0.5cm]
-    {\Huge\bfseries Kirin}\\[0.3cm]
+    {\Huge\bfseries Kirin Autonomous Chess}\\[0.3cm]
     {\Large Hardware Integration Guide}\\[0.3cm]
     \rule{\textwidth}{1pt}\\[1cm]
     {\large Connecting the Raspberry Pi to the Physical Chess Board}
@@ -178,6 +178,26 @@ The system has four hardware subsystems that connect to the Pi:
 \end{tikzpicture}
 \end{center}
 
+\section{Runtime Move Pipeline}
+
+The physical game loop intentionally keeps a single software-to-hardware path for real hardware, dry-run, and simulation. For the common case where the human starts as white, one full cycle is:
+
+\begin{enumerate}
+    \item \textbf{Human moves a piece}: \texttt{BoardScanner::waitForLegalMove()} polls the board and storage muxes until the board or storage state differs from the synchronized baseline.
+    \item \textbf{Sensors stabilize}: board and storage are debounced together. A candidate state must remain identical for \texttt{DEBOUNCE\_SCANS} reads separated by \texttt{DEBOUNCE\_DELAY\_MS}. The scanner never auto-commits after a timeout; unrecognized states only trigger an alert and the loop keeps waiting.
+    \item \textbf{Move is matched to engine format}: \texttt{matchLegalMove()} compares the stable occupancy delta against the engine's legal move list. Captures are disambiguated with the exact storage slot that gained a piece and \texttt{PieceTracker}'s square-to-slot identity map.
+    \item \textbf{Engine state advances}: the matched encoded move is passed to \texttt{makeMove()}, then \texttt{GameController::updateTracker()} keeps per-piece slot identity synchronized.
+    \item \textbf{Engine responds}: \texttt{searchPosition()} selects \texttt{bestMove}. \texttt{GameController::executeEngineMove()} converts it to a \texttt{PhysicalMove}, builds a \texttt{MovePlan}, and sends that plan to the gantry controller.
+    \item \textbf{Blockers move out of the way}: each \texttt{RelocationPlan} is executed with magnet on/off dwell time around the move.
+    \item \textbf{Primary piece moves}: the engine-selected piece follows the planned path from source to destination. Captures require an exact storage slot before any capture G-code is emitted.
+    \item \textbf{Blockers restore}: parked blockers are returned in reverse order. When a restoration path exists, the gantry follows it; only an empty restoration path falls back to a direct move.
+    \item \textbf{Board is verified and re-baselined}: after successful hardware execution, the engine state, physical occupancy model, scanner board baseline, and scanner storage baseline are synchronized before waiting for the next human move.
+\end{enumerate}
+
+\notebox{The storage baseline used for a human turn is the last synchronized baseline, not a fresh scan taken after the prompt. This avoids a race where a fast player capture could accidentally become the new baseline instead of being detected as the move.}
+
+\warningbox{Do not bypass \texttt{GameController::executeEngineMove()} for real games. It is the boundary that enforces exact capture-slot routing, special-move sequencing, and physical-board state updates. The lower-level G-code helpers are useful for tests and diagnostics only.}
+
 \section{Prerequisites}
 
 \begin{table}[H]
@@ -214,13 +234,13 @@ mkdir build && cd build
 
 # Configure with GPIO support
 cmake .. -DCMAKE_BUILD_TYPE=Release \
-         -DCMAKE_CXX_FLAGS="-DHAS_GPIOD"
+         -DKIRIN_ENABLE_GPIOD=ON
 
 # Build
 cmake --build . --parallel
 \end{lstlisting}
 
-\warningbox{The \texttt{-DHAS\_GPIOD} flag is essential. Without it, the board scanner compiles in stub mode and all GPIO calls are no-ops. The build will succeed either way, but the sensors will not work without this flag.}
+\warningbox{The \texttt{-DKIRIN\_ENABLE\_GPIOD=ON} option is essential on the Raspberry Pi. Without it, the board scanner and button controller compile in stub mode and GPIO calls are no-ops. The build will succeed either way, but sensors and buttons will not work without GPIO support enabled.}
 
 \section{Install Dependencies}
 
@@ -598,9 +618,25 @@ The CNC shield's spindle enable pin drives a MOSFET or relay that controls the e
 \begin{lstlisting}[language=bash]
 # In the GRBL console:
 M3     # Magnet should engage
-G4 P2000  # Wait 2 seconds
+G4 P2.000  # Wait 2 seconds; GRBL P values are seconds
 M5     # Magnet should release
 \end{lstlisting}
+
+\notebox{Kirin's \texttt{dwell(milliseconds)} helper accepts milliseconds but emits GRBL seconds. For example, the default pick/release settle time \texttt{dwell(100)} is sent as \texttt{G4 P0.100}. Sending \texttt{G4 P100} would pause for 100 seconds on GRBL, not 100 milliseconds.}
+
+\section{GRBL Motion Mode Setup}
+
+After homing, Kirin sends a deterministic modal setup sequence before normal movement:
+
+\begin{lstlisting}[language=bash]
+$H     # Home gantry
+G20    # Use inches
+G90    # Use absolute coordinates
+G94    # Feed rate is units per minute
+M5     # Ensure magnet is off
+\end{lstlisting}
+
+\warningbox{Do not assume the GRBL controller is already in the correct modal state from a previous session. The software's coordinate constants and feed rates are expressed in inches and absolute G54 work coordinates, so \texttt{G20}, \texttt{G90}, and \texttt{G94} must be active before moving pieces.}
 
 \section{Physical Coordinate System}
 
@@ -1012,6 +1048,26 @@ Pin 18 & GPIO 24 (Reset button) \\
 \chapter{Software Command Reference}
 %==============================================================================
 
+\section{Command-Line Validation Modes}
+
+Use these modes before powering the gantry:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{p{5cm}p{9cm}}
+\toprule
+\textbf{Mode} & \textbf{Purpose} \\
+\midrule
+\texttt{--simulate} & Interactive move-by-move mode. It uses the same \texttt{GameController} to \texttt{GrblController} dry-run execution path as physical mode, but prints G-code instead of sending it to serial hardware. \\
+\addlinespace
+\texttt{--dryrun [MOVES [DEPTH]]} & Engine-vs-engine dry run. It exercises setup, path planning, capture-slot routing, blocker relocation, and restoration G-code without connected hardware. \\
+\bottomrule
+\end{tabular}
+\caption{Command-line validation modes}
+\end{table}
+
+\section{Physical Mode Commands}
+
 Quick reference for all commands available in physical mode:
 
 \begin{table}[H]
@@ -1073,6 +1129,8 @@ These constants in \texttt{board\_scanner.h} and \texttt{gantry\_controller.h} m
 \texttt{ILLEGAL\_STATE\_ALERT\_MS} & 10,000 ms & How long the board can sit in an unrecognized state before alerting the player. \\
 \addlinespace
 \texttt{FEED\_RATE} & 1000 in/min & Gantry movement speed. Reduce if the gantry skips steps or knocks pieces over. \\
+\addlinespace
+\texttt{dwell(100)} & 100 ms & Pick/release settle time around magnet on/off. Encoded as \texttt{G4 P0.100} for GRBL. Increase only if the magnet or pieces need more settle time. \\
 \addlinespace
 \texttt{SQUARE\_SIZE} & 1.5 in & Physical size of each board square. \\
 \addlinespace

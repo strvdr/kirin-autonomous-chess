@@ -330,11 +330,12 @@ bool GameController::waitForHumanMove(int& engineMove, int timeoutMs) {
     
     // The scanner needs the current board occupancy and storage baselines.
     Bitboard currentOccupancy = occupancy[both];
-    
-    // Read the current storage zone state as our baseline.
-    // Any new piece appearing in storage during the human's move = a capture.
-    uint16_t blackStorage = scanner.scanStorageDebounced(false);
-    uint16_t whiteStorage = scanner.scanStorageDebounced(true);
+
+    // Use the last synchronized storage baselines. Re-scanning here creates
+    // a race window where an early player capture could be accepted as the
+    // baseline instead of the move.
+    uint16_t blackStorage = scanner.getLastBlackStorage();
+    uint16_t whiteStorage = scanner.getLastWhiteStorage();
     
     printf("Waiting for your move...\n");
     
@@ -441,21 +442,40 @@ bool GameController::executeCastlingInternal(int engineMove) {
         }
     }
     
-    // Step 1: Move the rook first (to avoid blocking king's path with some gantry designs)
     PhysicalMove rookMove(
         squareToBoardCoord(rookFrom),
         squareToBoardCoord(rookTo),
         ROOK,
         false
     );
-    
-    MovePlan rookPlan = planMove(physicalBoard, rookMove);
+
+    PhysicalMove kingMove(
+        squareToBoardCoord(source),
+        squareToBoardCoord(target),
+        KING,
+        false
+    );
+
+    // Plan both castling moves before hardware motion starts. The king plan
+    // depends on the board state after the rook move, so use a temporary board.
+    PhysicalBoard planningBoard = physicalBoard;
+    MovePlan rookPlan = planMove(planningBoard, rookMove);
     if (!rookPlan.isValid) {
         printf("Error planning rook move for castling: %s\n", 
                rookPlan.errorMessage ? rookPlan.errorMessage : "unknown error");
         return false;
     }
+
+    planningBoard.movePiece(rookMove.from, rookMove.to);
+
+    MovePlan kingPlan = planMove(planningBoard, kingMove);
+    if (!kingPlan.isValid) {
+        printf("Error planning king move for castling: %s\n",
+               kingPlan.errorMessage ? kingPlan.errorMessage : "unknown error");
+        return false;
+    }
     
+    // Step 1: Move the rook first (to avoid blocking king's path with some gantry designs)
     if (!gantry.executeMove(rookPlan, false, SLOT_NONE)) {
         printf("Error: Rook move failed during castling\n");
         return false;
@@ -465,25 +485,6 @@ bool GameController::executeCastlingInternal(int engineMove) {
     physicalBoard.movePiece(rookMove.from, rookMove.to);
     
     // Step 2: Move the king
-    PhysicalMove kingMove(
-        squareToBoardCoord(source),
-        squareToBoardCoord(target),
-        KING,
-        false
-    );
-    
-    MovePlan kingPlan = planMove(physicalBoard, kingMove);
-    if (!kingPlan.isValid) {
-        printf("Error planning king move for castling: %s\n",
-               kingPlan.errorMessage ? kingPlan.errorMessage : "unknown error");
-        // Rook already moved physically but king planning failed.
-        // Restore physicalBoard to pre-castling state.
-        printf("Warning: Castling may be partially executed on the physical board.\n");
-        printf("  Inspect rook/king positions and recover manually before continuing.\n");
-        physicalBoard.setOccupancy(savedOccupancy);
-        return false;
-    }
-    
     if (!gantry.executeMove(kingPlan, false, SLOT_NONE)) {
         printf("Error: King move failed during castling\n");
         // Rook moved physically but king failed on hardware.
@@ -531,6 +532,18 @@ bool GameController::executeEnPassantInternal(int engineMove) {
         printf("Error: Could not resolve exact capture slot for en passant\n");
         return false;
     }
+
+    PhysicalMove pawnMove(fromCoord, toCoord, PAWN, false);  // Not a capture on target square
+
+    // Plan the pawn move before removing anything physically.
+    PhysicalBoard planningBoard = physicalBoard;
+    planningBoard.clearSquare(capturedPawnSquare);
+    MovePlan pawnPlan = planMove(planningBoard, pawnMove);
+    if (!pawnPlan.isValid) {
+        printf("Error planning en passant pawn move: %s\n",
+               pawnPlan.errorMessage ? pawnPlan.errorMessage : "unknown error");
+        return false;
+    }
     
     // Step 1: Remove the captured pawn first
     std::vector<std::string> captureGcode = Gantry::generateCaptureGcode(
@@ -548,20 +561,6 @@ bool GameController::executeEnPassantInternal(int engineMove) {
     physicalBoard.clearSquare(capturedPawnSquare);
     
     // Step 2: Move the capturing pawn
-    PhysicalMove pawnMove(fromCoord, toCoord, PAWN, false);  // Not a capture on target square
-    
-    MovePlan pawnPlan = planMove(physicalBoard, pawnMove);
-    if (!pawnPlan.isValid) {
-        printf("Error planning en passant pawn move: %s\n",
-               pawnPlan.errorMessage ? pawnPlan.errorMessage : "unknown error");
-        // Captured pawn already removed physically, but pawn move planning failed.
-        // Restore physicalBoard to pre-move state.
-        printf("Warning: En passant capture may be partially executed on the physical board.\n");
-        printf("  Inspect the captured pawn and capturing pawn before continuing.\n");
-        physicalBoard.setOccupancy(savedOccupancy);
-        return false;
-    }
-    
     if (!gantry.executeMove(pawnPlan, false, SLOT_NONE)) {
         printf("Error: Pawn move failed during en passant\n");
         // Captured pawn removed but capturing pawn didn't move.
@@ -609,6 +608,18 @@ bool GameController::executePromotionInternal(int engineMove) {
             return false;
         }
 
+        // Plan the pawn move before removing the captured piece physically.
+        PhysicalMove pawnMove(fromCoord, toCoord, PAWN, false);
+        PhysicalBoard planningBoard = physicalBoard;
+        planningBoard.clearSquare(toCoord);
+        MovePlan plan = planMove(planningBoard, pawnMove);
+
+        if (!plan.isValid) {
+            printf("Error planning promotion move: %s\n",
+                   plan.errorMessage ? plan.errorMessage : "unknown error");
+            return false;
+        }
+
         std::vector<std::string> captureGcode = Gantry::generateCaptureGcode(
             toCoord,
             capturedIsWhite,
@@ -623,20 +634,6 @@ bool GameController::executePromotionInternal(int engineMove) {
         physicalBoard.clearSquare(toCoord);
         
         // Now move the pawn
-        PhysicalMove pawnMove(fromCoord, toCoord, PAWN, false);
-        MovePlan plan = planMove(physicalBoard, pawnMove);
-        
-        if (!plan.isValid) {
-            printf("Error planning promotion move: %s\n",
-                   plan.errorMessage ? plan.errorMessage : "unknown error");
-            // Captured piece removed but pawn move planning failed.
-            // Restore physicalBoard to pre-move state.
-            printf("Warning: Capture-promotion may be partially executed on the physical board.\n");
-            printf("  Inspect the promotion square and storage slot before continuing.\n");
-            physicalBoard.setOccupancy(savedOccupancy);
-            return false;
-        }
-        
         if (!gantry.executeMove(plan, false, SLOT_NONE)) {
             printf("Error: Pawn move failed during promotion\n");
             // Captured piece removed but pawn didn't move.
