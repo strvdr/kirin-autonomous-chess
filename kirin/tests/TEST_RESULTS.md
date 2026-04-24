@@ -1,9 +1,9 @@
 # Kirin Chess Engine — Test Results
 
-> Generated: 2026-04-24 16:28 UTC  
+> Generated: 2026-04-24 18:32 UTC  
 > Run `cmake --build build --target test_report` to refresh.
 
-![tests](https://img.shields.io/badge/tests-378%2F378+passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-389%2F389+passing-brightgreen)
 
 ## Summary
 
@@ -11,9 +11,9 @@
 |---|---|---|---|---|
 | Captured Piece Detection | ✅ | 10 | 0 | 0.00 s |
 | Board Interpreter | ✅ | 63 | 0 | 0.00 s |
-| Game Controller | ✅ | 249 | 0 | 0.01 s |
-| Engine Validity & Skill Level | ✅ | 56 | 0 | 0.18 s |
-| **Total** | ✅ | **378** | **0** | — |
+| Game Controller | ✅ | 260 | 0 | 0.01 s |
+| Engine Validity & Skill Level | ✅ | 56 | 0 | 0.21 s |
+| **Total** | ✅ | **389** | **0** | — |
 
 ## Detail
 
@@ -343,6 +343,35 @@ _Integration layer: coordinate conversion, piece conversion, PhysicalBoard sync,
 - ✅ d4xe5 found for engine capture test
 - ✅ engine capture succeeds with exact tracker state
 - ✅ engine capture is rejected with unknown tracker state
+
+</details>
+
+<details>
+<summary><b>Capture G-code exact slot routing &nbsp;—&nbsp; 3/3 passed</b></summary>
+
+- ✅ capture starts from occupied board square e5
+- ✅ captured black e-pawn routes to SLOT_P5
+- ✅ capture path does not fall back to SLOT_P1
+
+</details>
+
+<details>
+<summary><b>Gantry rejects slotless capture &nbsp;—&nbsp; 1/1 passed</b></summary>
+
+- ✅ capture execution fails without exact storage slot
+
+</details>
+
+<details>
+<summary><b>GRBL timing and motion setup &nbsp;—&nbsp; 7/7 passed</b></summary>
+
+- ✅ 100ms dwell is encoded as GRBL seconds
+- ✅ 750ms dwell is encoded as GRBL seconds
+- ✅ motion setup has four commands
+- ✅ motion setup selects inches
+- ✅ motion setup selects absolute positioning
+- ✅ motion setup selects units-per-minute feed
+- ✅ motion setup leaves magnet off
 
 </details>
 
