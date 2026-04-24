@@ -1,9 +1,9 @@
 # Kirin Chess Engine — Test Results
 
-> Generated: 2026-04-07 23:19 UTC  
+> Generated: 2026-04-24 16:28 UTC  
 > Run `cmake --build build --target test_report` to refresh.
 
-![tests](https://img.shields.io/badge/tests-364%2F364+passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-378%2F378+passing-brightgreen)
 
 ## Summary
 
@@ -11,9 +11,9 @@
 |---|---|---|---|---|
 | Captured Piece Detection | ✅ | 10 | 0 | 0.00 s |
 | Board Interpreter | ✅ | 63 | 0 | 0.00 s |
-| Game Controller | ✅ | 235 | 0 | 0.00 s |
+| Game Controller | ✅ | 249 | 0 | 0.01 s |
 | Engine Validity & Skill Level | ✅ | 56 | 0 | 0.18 s |
-| **Total** | ✅ | **364** | **0** | — |
+| **Total** | ✅ | **378** | **0** | — |
 
 ## Detail
 
@@ -311,6 +311,38 @@ _Integration layer: coordinate conversion, piece conversion, PhysicalBoard sync,
 - ✅ middle ranks empty after sync
 - ✅ middle ranks empty after sync
 - ✅ middle ranks empty after sync
+
+</details>
+
+<details>
+<summary><b>PieceTracker survives syncWithEngine &nbsp;—&nbsp; 8/8 passed</b></summary>
+
+- ✅ e2e4 found for tracker persistence
+- ✅ e2e4 applied to engine state
+- ✅ white e-pawn remains tracked on e4 after sync
+- ✅ e4 square retains e-pawn identity after sync
+- ✅ g8f6 found for tracker persistence
+- ✅ g8f6 applied to engine state
+- ✅ black g-knight remains tracked on f6 after sync
+- ✅ white e-pawn identity survives later sync
+
+</details>
+
+<details>
+<summary><b>Tracker validity &nbsp;—&nbsp; 3/3 passed</b></summary>
+
+- ✅ tracker starts unknown before explicit initialization
+- ✅ tracker becomes exact after starting-position init
+- ✅ tracker invalidation clears exact identity state
+
+</details>
+
+<details>
+<summary><b>Engine capture requires exact tracker &nbsp;—&nbsp; 3/3 passed</b></summary>
+
+- ✅ d4xe5 found for engine capture test
+- ✅ engine capture succeeds with exact tracker state
+- ✅ engine capture is rejected with unknown tracker state
 
 </details>
 
