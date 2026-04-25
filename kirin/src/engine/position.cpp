@@ -141,23 +141,29 @@ void printBoard() {
 }
 
 /************ Perft Testing ************/
-static inline void perftDriver(int depth) { 
+static long perftDriver(int depth) {
     if (depth == 0) {
-        nodes++;
-        return; 
+        return 1;
     }
     
     moves moveList[1];
     generateMoves(moveList); 
+    long total = 0;
     
     for (int i = 0; i < moveList->count; i++) { 
         BoardState state = copyBoard();
         
         if (!makeMove(moveList->moves[i], allMoves)) continue;
         
-        perftDriver(depth - 1);
+        total += perftDriver(depth - 1);
         restoreBoard(state);
     }
+
+    return total;
+}
+
+long perft(int depth) {
+    return perftDriver(depth);
 }
 
 void perftTest(int depth) { 
@@ -172,9 +178,8 @@ void perftTest(int depth) {
         
         if (!makeMove(moveList->moves[i], allMoves)) continue;
         
-        long cumulativeNodes = nodes; 
-        perftDriver(depth - 1);
-        long oldNodes = nodes - cumulativeNodes;
+        long oldNodes = perftDriver(depth - 1);
+        nodes += oldNodes;
         
         restoreBoard(state);
         

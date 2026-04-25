@@ -37,6 +37,7 @@ std::int64_t startTime = 0;
 std::int64_t stopTime = 0;
 int timeSet = 0;
 int stopped = 0;
+int uciInputPolling = 0;
 
 /************ Random Number State ************/
 unsigned int randState = 1804289383;
@@ -95,7 +96,7 @@ void readInput() {
 
 void communicate() { 
     if (timeSet == 1 && getTimeMS() > stopTime) stopped = 1;
-    readInput();
+    if (uciInputPolling) readInput();
 }
 
 void resetTimeControl() {
@@ -108,6 +109,10 @@ void resetTimeControl() {
     stopTime = 0;
     timeSet = 0;
     stopped = 0;
+}
+
+void setUciInputPolling(int enabled) {
+    uciInputPolling = enabled ? 1 : 0;
 }
 
 /************ Random Number Generation (from Tord Romstad) ************/

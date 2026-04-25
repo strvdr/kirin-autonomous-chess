@@ -189,6 +189,7 @@ void parseGo(char *command) {
 void uciLoop() {
     setbuf(stdin, NULL);
     setbuf(stdout, NULL);
+    setUciInputPolling(1);
     
     char input[2000];
     

@@ -82,6 +82,7 @@ void clearTranspositionTable() {
         transpositionTable[index].depth = 0;
         transpositionTable[index].flag = 0;
         transpositionTable[index].score = 0;
+        transpositionTable[index].move = 0;
     }
 }
 
@@ -109,7 +110,12 @@ int readHashEntry(int alpha, int beta, int depth) {
     return noHashEntry;
 }
 
-void recordHash(int score, int depth, int hashFlag) {
+static int getHashMove() {
+    tt *hashEntry = &transpositionTable[hashKey % hashSize];
+    return (hashEntry->key == hashKey) ? hashEntry->move : 0;
+}
+
+void recordHash(int score, int depth, int hashFlag, int move) {
     tt *hashEntry = &transpositionTable[hashKey % hashSize];
     
     if (score < -mateScore) score -= ply;
@@ -119,6 +125,7 @@ void recordHash(int score, int depth, int hashFlag) {
     hashEntry->depth = depth;
     hashEntry->flag = hashFlag;
     hashEntry->score = score;
+    hashEntry->move = move;
 }
 
 /************ Move Ordering ************/
@@ -135,11 +142,12 @@ void enablePvScoring(moves *moveList) {
 /*
  * Move ordering priorities:
  * 1. PV move
- * 2. Captures (MVV/LVA)
- * 3. 1st Killer Move
- * 4. 2nd Killer Move
- * 5. History Moves
- * 6. Unsorted Moves
+ * 2. Hash move
+ * 3. Captures (MVV/LVA)
+ * 4. 1st Killer Move
+ * 5. 2nd Killer Move
+ * 6. History Moves
+ * 7. Unsorted Moves
  */
 int scoreMove(int move) { 
     // PV move
@@ -149,26 +157,15 @@ int scoreMove(int move) {
             return 20000;
         }
     }
+
+    // Hash move
+    if (getHashMove() == move) {
+        return 19000;
+    }
     
     // Captures
     if (getCapture(move)) { 
-        int targetPiece = P;
-        int startPiece, endPiece;
-        
-        if (side == white) { 
-            startPiece = p; 
-            endPiece = k; 
-        } else { 
-            startPiece = P; 
-            endPiece = K; 
-        }
-        
-        for (int bbPiece = startPiece; bbPiece <= endPiece; bbPiece++) { 
-            if (getBit(bitboards[bbPiece], getTarget(move))) {
-                targetPiece = bbPiece;
-                break;
-            }
-        }
+        int targetPiece = getCapturedPiece(move);
         return mvvLVA[getPiece(move)][targetPiece] + 10000;
     }
     
@@ -302,6 +299,7 @@ int negamax(int alpha, int beta, int depth) {
     if (inCheck) depth++;
     
     int legalMoves = 0;
+    int hashMove = 0;
     
     // Null move pruning
     if (depth >= 3 && inCheck == 0 && ply) {
@@ -385,6 +383,7 @@ int negamax(int alpha, int beta, int depth) {
         // Found a better move
         if (score > alpha) {
             hashFlag = hashFlagExact;
+            hashMove = moveList->moves[i];
             
             // Update history for quiet moves
             if (getCapture(moveList->moves[i]) == 0) { 
@@ -402,7 +401,7 @@ int negamax(int alpha, int beta, int depth) {
             
             // Beta cutoff
             if (score >= beta) { 
-                recordHash(beta, depth, hashFlagBeta);
+                recordHash(beta, depth, hashFlagBeta, moveList->moves[i]);
                 
                 // Update killer moves for quiet moves
                 if (getCapture(moveList->moves[i]) == 0) { 
@@ -422,7 +421,7 @@ int negamax(int alpha, int beta, int depth) {
         return 0;  // Stalemate
     }
     
-    recordHash(alpha, depth, hashFlag);
+    recordHash(alpha, depth, hashFlag, hashMove);
     return alpha;
 }
 

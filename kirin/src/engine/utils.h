@@ -32,6 +32,7 @@ extern std::int64_t startTime;
 extern std::int64_t stopTime;
 extern int timeSet;
 extern int stopped;
+extern int uciInputPolling;
 
 /************ Time Control Functions ************/
 std::int64_t getTimeMS();
@@ -39,6 +40,7 @@ int inputWaiting();
 void readInput();
 void communicate();
 void resetTimeControl();
+void setUciInputPolling(int enabled);
 
 /************ Random Number Generation ************/
 // Pseudo random number state

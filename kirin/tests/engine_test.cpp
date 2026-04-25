@@ -24,18 +24,8 @@
 *      4. Skill level        – skillLevel global, depth-cap effect via perft counts,
 *                              and move legality invariant via generateMoves/makeMove
 *    
-*    WHY NO negamax() CALLS
-*    ──────────────────────
-*    negamax() calls communicate() every 2048 nodes.  communicate() calls
-*    readInput() which calls select() on stdin.  When CTest runs the binary
-*    stdin is /dev/null, which select() reports as readable (EOF).  readInput()
-*    then sets stopped=1.  Every subsequent negamax() call returns 0 immediately,
-*    pvTable is never updated, and the zero move causes a crash.
-*    
-*    The other test files in this project (captured_piece_test, board_interpreter_test,
-*    game_controller_test) avoid this by never calling any search function.  This
-*    suite follows the same pattern: all tests use only parseFEN, generateMoves,
-*    makeMove, evaluate, and perft — none of which touch stdin.
+*    Search tests run with UCI input polling disabled.  This keeps CTest's
+*    /dev/null stdin from affecting search while preserving polling for UCI mode.
 */
 
 #include <cstdio>
@@ -78,23 +68,6 @@ static void printHeader(const char *name) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-// Counts legal leaf nodes at the given depth.  Identical logic to the engine's
-// own perftDriver but returns the count rather than printing it.
-static long perft(int depth) {
-    if (depth == 0) return 1;
-    moves ml[1];
-    generateMoves(ml);
-    long total = 0;
-    for (int i = 0; i < ml->count; i++) {
-        BoardState state = copyBoard();
-        ply = 0;
-        if (makeMove(ml->moves[i], allMoves) == 0) { restoreBoard(state); continue; }
-        total += perft(depth - 1);
-        restoreBoard(state);
-    }
-    return total;
-}
 
 // Returns true iff the move encoded as UCI string "e2e4" / "e7e8q" is legal
 // in the current position.
@@ -192,9 +165,7 @@ static void testEvaluationSanity() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Suite 3 – Tactical position structure
 //
-// We cannot call negamax in a test binary because communicate()/readInput()
-// sets stopped=1 when stdin is /dev/null (CTest), corrupting the search.
-// Instead we verify tactical positions through:
+// Tactical positions are verified through:
 //   • perft(1) == 0  for checkmate and stalemate (no legal moves)
 //   • isAttacked()   to distinguish checkmate from stalemate
 //   • moveIsLegal()  to confirm a specific move exists in the move list
@@ -257,6 +228,11 @@ static void testTacticalPositions() {
     TEST_ASSERT(moveIsLegal("a7a8r"), "promotion: a7-a8=R is legal");
     TEST_ASSERT(moveIsLegal("a7a8b"), "promotion: a7-a8=B is legal");
     TEST_ASSERT(moveIsLegal("a7a8n"), "promotion: a7-a8=N is legal");
+
+    parseFEN("1n2k3/P7/8/8/8/8/8/4K3 w - - 0 1");
+    int promotionCapture = parseMove("a7b8q");
+    TEST_ASSERT(promotionCapture != 0 && getCapturedPiece(promotionCapture) == n,
+                "promotion capture stores the captured piece for move ordering");
 
     // ── Castling moves exist when rights are intact ───────────────────────
     parseFEN("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1");
@@ -374,6 +350,38 @@ static void testRepetitionDetection() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Suite 6 – Search API
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void testSearchApi() {
+    printHeader("Search API");
+
+    setUciInputPolling(0);
+    stopped = 0;
+    communicate();
+    TEST_ASSERT(stopped == 0,
+                "communicate() does not read stdin when UCI input polling is disabled");
+
+    resetTimeControl();
+    setUciInputPolling(0);
+    skillLevel = 2;
+    parseFEN(startPosition);
+    searchPosition(2);
+
+    BoardState state = copyBoard();
+    bool legalBestMove = (makeMove(bestMove, allMoves) != 0);
+    restoreBoard(state);
+
+    TEST_ASSERT(stopped == 0,
+                "searchPosition() completes under CTest without stdin side effects");
+    TEST_ASSERT(legalBestMove,
+                "searchPosition() returns a legal best move through the public API");
+    TEST_ASSERT(transpositionTable[hashKey % hashSize].key == hashKey &&
+                transpositionTable[hashKey % hashSize].move == bestMove,
+                "searchPosition() stores the root best move in the transposition table");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Main
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -387,6 +395,7 @@ int main() {
     testTacticalPositions();
     testSkillLevel();
     testRepetitionDetection();
+    testSearchApi();
 
     printf("\n" ANSI_BOLD "╔══ Results: %d/%d passed" ANSI_RESET,
            testsPassed, testsRun);

@@ -28,6 +28,7 @@ void parseFEN(const char *fenStr);
 void printBoard();
 
 /************ Perft Testing ************/
+long perft(int depth);
 void perftTest(int depth);
 
 // Node counter for perft

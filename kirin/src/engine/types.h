@@ -82,6 +82,7 @@ typedef struct {
     int depth;
     int flag;
     int score;
+    int move;
 } tt;
 
 /************ FEN Debug Positions ************/

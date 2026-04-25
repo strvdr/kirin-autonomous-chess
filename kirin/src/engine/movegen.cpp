@@ -276,10 +276,11 @@ void generateMoves(moves *moveList) {
                     while (attacks) { 
                         targetSquare = getLSBindex(attacks); 
                         if (sourceSquare >= a7 && sourceSquare <= h7) {
-                            addMove(moveList, encodeMove(sourceSquare, targetSquare, piece, Q, 1, 0, 0, 0));
-                            addMove(moveList, encodeMove(sourceSquare, targetSquare, piece, R, 1, 0, 0, 0));
-                            addMove(moveList, encodeMove(sourceSquare, targetSquare, piece, B, 1, 0, 0, 0));
-                            addMove(moveList, encodeMove(sourceSquare, targetSquare, piece, N, 1, 0, 0, 0));
+                            int capturedPiece = getPieceOnSquare(targetSquare, side);
+                            addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, Q, 1, 0, 0, 0, capturedPiece));
+                            addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, R, 1, 0, 0, 0, capturedPiece));
+                            addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, B, 1, 0, 0, 0, capturedPiece));
+                            addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, N, 1, 0, 0, 0, capturedPiece));
                         } else {
                             int capturedPiece = getPieceOnSquare(targetSquare, side);
                             addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, 0, 1, 0, 0, 0, capturedPiece));
@@ -352,10 +353,11 @@ void generateMoves(moves *moveList) {
                     while (attacks) { 
                         targetSquare = getLSBindex(attacks); 
                         if (sourceSquare >= a2 && sourceSquare <= h2) {
-                            addMove(moveList, encodeMove(sourceSquare, targetSquare, piece, q, 1, 0, 0, 0));
-                            addMove(moveList, encodeMove(sourceSquare, targetSquare, piece, r, 1, 0, 0, 0));
-                            addMove(moveList, encodeMove(sourceSquare, targetSquare, piece, b, 1, 0, 0, 0));
-                            addMove(moveList, encodeMove(sourceSquare, targetSquare, piece, n, 1, 0, 0, 0));
+                            int capturedPiece = getPieceOnSquare(targetSquare, side);
+                            addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, q, 1, 0, 0, 0, capturedPiece));
+                            addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, r, 1, 0, 0, 0, capturedPiece));
+                            addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, b, 1, 0, 0, 0, capturedPiece));
+                            addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, n, 1, 0, 0, 0, capturedPiece));
                         } else {
                             int capturedPiece = getPieceOnSquare(targetSquare, side);
                             addMove(moveList, encodeMoveWithCapture(sourceSquare, targetSquare, piece, 0, 1, 0, 0, 0, capturedPiece));

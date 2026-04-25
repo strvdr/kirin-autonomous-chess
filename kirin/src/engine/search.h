@@ -45,7 +45,7 @@ extern int mvvLVA[12][12];
 /************ Transposition Table Functions ************/
 void clearTranspositionTable();
 int readHashEntry(int alpha, int beta, int depth);
-void recordHash(int score, int depth, int hashFlag);
+void recordHash(int score, int depth, int hashFlag, int move);
 
 /************ Move Ordering ************/
 int scoreMove(int move);
