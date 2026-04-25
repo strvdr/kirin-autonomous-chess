@@ -151,23 +151,24 @@ static inline void perftDriver(int depth) {
     generateMoves(moveList); 
     
     for (int i = 0; i < moveList->count; i++) { 
-        copyBoard(); 
+        BoardState state = copyBoard();
         
         if (!makeMove(moveList->moves[i], allMoves)) continue;
         
         perftDriver(depth - 1);
-        restoreBoard();
+        restoreBoard(state);
     }
 }
 
 void perftTest(int depth) { 
     printf("\nPerformance Test\n");
+    nodes = 0;
     moves moveList[1];
     generateMoves(moveList); 
     long start = getTimeMS();
     
     for (int i = 0; i < moveList->count; i++) { 
-        copyBoard(); 
+        BoardState state = copyBoard();
         
         if (!makeMove(moveList->moves[i], allMoves)) continue;
         
@@ -175,13 +176,21 @@ void perftTest(int depth) {
         perftDriver(depth - 1);
         long oldNodes = nodes - cumulativeNodes;
         
-        restoreBoard();
+        restoreBoard(state);
         
-        printf("move: %s%s%c  nodes: %ld\n", 
-               squareCoordinates[getSource(moveList->moves[i])], 
-               squareCoordinates[getTarget(moveList->moves[i])],
-               promotedPieces[getPromoted(moveList->moves[i])],
-               oldNodes);
+        int promoted = getPromoted(moveList->moves[i]);
+        if (promoted) {
+            printf("move: %s%s%c  nodes: %ld\n",
+                   squareCoordinates[getSource(moveList->moves[i])],
+                   squareCoordinates[getTarget(moveList->moves[i])],
+                   promotedPieces[promoted],
+                   oldNodes);
+        } else {
+            printf("move: %s%s  nodes: %ld\n",
+                   squareCoordinates[getSource(moveList->moves[i])],
+                   squareCoordinates[getTarget(moveList->moves[i])],
+                   oldNodes);
+        }
     }
     
     printf("\nDepth: %d", depth);

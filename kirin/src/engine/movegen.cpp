@@ -89,7 +89,7 @@ inline int getPieceOnSquare(int square, int attackingSide) {
 int makeMove(int move, int moveFlag) { 
     if (moveFlag == allMoves) {
         // Preserve board state
-        copyBoard();
+        BoardState state = copyBoard();
         
         // Parse move
         int sourceSquare = getSource(move);
@@ -224,7 +224,7 @@ int makeMove(int move, int moveFlag) {
         
         // Make sure the king isn't in check
         if (isAttacked((side == white) ? getLSBindex(bitboards[k]) : getLSBindex(bitboards[K]), side)) { 
-            restoreBoard();
+            restoreBoard(state);
             return 0; 
         }
         

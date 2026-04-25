@@ -34,6 +34,13 @@ int parseMove(const char *moveString) {
     
     int sourceSquare = (moveString[0] - 'a') + (8 - (moveString[1] - '0')) * 8;
     int targetSquare = (moveString[2] - 'a') + (8 - (moveString[3] - '0')) * 8;
+
+    auto isLegalMove = [](int move) {
+        BoardState state = copyBoard();
+        int legal = makeMove(move, allMoves);
+        restoreBoard(state);
+        return legal != 0;
+    };
     
     for (int i = 0; i < moveList->count; i++) { 
         int move = moveList->moves[i];
@@ -43,17 +50,17 @@ int parseMove(const char *moveString) {
             
             if (promotedPiece) {  
                 if ((promotedPiece == Q || promotedPiece == q) && moveString[4] == 'q') { 
-                    return move;
+                    return isLegalMove(move) ? move : 0;
                 } else if ((promotedPiece == R || promotedPiece == r) && moveString[4] == 'r') {
-                    return move; 
+                    return isLegalMove(move) ? move : 0;
                 } else if ((promotedPiece == B || promotedPiece == b) && moveString[4] == 'b') {
-                    return move; 
+                    return isLegalMove(move) ? move : 0;
                 } else if ((promotedPiece == N || promotedPiece == n) && moveString[4] == 'n') {
-                    return move; 
+                    return isLegalMove(move) ? move : 0;
                 }
                 continue;
             }
-            return move;
+            return isLegalMove(move) ? move : 0;
         }
     }
     
@@ -85,13 +92,13 @@ void parsePosition(const char *commandStr) {
             int move = parseMove(currentChar);
             if (move == 0) break; 
             
-            repetitionIndex++;
             repetitionTable[repetitionIndex] = hashKey;
+            repetitionIndex++;
             
             makeMove(move, allMoves);
             
             while (*currentChar && *currentChar != ' ') currentChar++;
-            currentChar++;
+            while (*currentChar == ' ') currentChar++;
         }
     }
 }
@@ -195,7 +202,7 @@ void uciLoop() {
         fflush(stdout);
         
         if (!fgets(input, 2000, stdin))
-            continue;
+            break;
         
         if (input[0] == '\n')
             continue;
@@ -215,6 +222,7 @@ void uciLoop() {
         }
         else if (strncmp(input, "go", 2) == 0) {
             parseGo(input);
+            if (quit) break;
         }
         else if (strncmp(input, "quit", 4) == 0) {
             break;

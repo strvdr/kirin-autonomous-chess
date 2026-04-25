@@ -19,6 +19,8 @@
 #ifndef KIRIN_MOVEGEN_H
 #define KIRIN_MOVEGEN_H
 
+#include <cstring>
+#include "bitboard.h"
 #include "types.h"
 
 /************ Move Encoding ************/
@@ -67,26 +69,35 @@ void generateMoves(moves *moveList);
 /************ Make Move ************/
 int makeMove(int move, int moveFlag);
 
-/************ Board State Macros ************/
-// Save board state before making a move
-#define copyBoard()                                    \
-    U64 bitboardsCopy[12], occupancyCopy[3];          \
-    int sideCopy, enpassantCopy, castleCopy;          \
-    memcpy(bitboardsCopy, bitboards, 96);              \
-    memcpy(occupancyCopy, occupancy, 24);              \
-    sideCopy = side;                                   \
-    enpassantCopy = enpassant;                         \
-    castleCopy = castle;                               \
-    U64 hashKeyCopy = hashKey;
+/************ Board State ************/
+struct BoardState {
+    U64 bitboards[12];
+    U64 occupancy[3];
+    int side;
+    int enpassant;
+    int castle;
+    U64 hashKey;
+};
 
-// Restore board state after unmaking a move
-#define restoreBoard()                                 \
-    memcpy(bitboards, bitboardsCopy, 96);              \
-    memcpy(occupancy, occupancyCopy, 24);              \
-    side = sideCopy;                                   \
-    enpassant = enpassantCopy;                         \
-    castle = castleCopy;                               \
-    hashKey = hashKeyCopy;
+static inline BoardState copyBoard() {
+    BoardState state;
+    std::memcpy(state.bitboards, bitboards, sizeof(bitboards));
+    std::memcpy(state.occupancy, occupancy, sizeof(occupancy));
+    state.side = side;
+    state.enpassant = enpassant;
+    state.castle = castle;
+    state.hashKey = hashKey;
+    return state;
+}
+
+static inline void restoreBoard(const BoardState& state) {
+    std::memcpy(bitboards, state.bitboards, sizeof(bitboards));
+    std::memcpy(occupancy, state.occupancy, sizeof(occupancy));
+    side = state.side;
+    enpassant = state.enpassant;
+    castle = state.castle;
+    hashKey = state.hashKey;
+}
 
 /************ Debug Functions ************/
 void printMove(int move);

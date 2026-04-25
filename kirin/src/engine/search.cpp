@@ -238,7 +238,7 @@ int quiescence(int alpha, int beta) {
     sortMoves(moveList);
     
     for (int i = 0; i < moveList->count; i++) {
-        copyBoard();
+        BoardState state = copyBoard();
         ply++;
         
         repetitionTable[repetitionIndex] = hashKey;
@@ -254,7 +254,7 @@ int quiescence(int alpha, int beta) {
         
         ply--;
         repetitionIndex--;
-        restoreBoard();
+        restoreBoard(state);
         
         if (stopped == 1) return 0;
         
@@ -305,7 +305,7 @@ int negamax(int alpha, int beta, int depth) {
     
     // Null move pruning
     if (depth >= 3 && inCheck == 0 && ply) {
-        copyBoard();
+        BoardState state = copyBoard();
         ply++;
         
         repetitionTable[repetitionIndex] = hashKey;
@@ -320,7 +320,7 @@ int negamax(int alpha, int beta, int depth) {
         
         ply--;
         repetitionIndex--;
-        restoreBoard();
+        restoreBoard(state);
         
         if (stopped == 1) return 0;
         if (score >= beta) return beta;
@@ -336,7 +336,7 @@ int negamax(int alpha, int beta, int depth) {
     int movesSearched = 0;
     
     for (int i = 0; i < moveList->count; i++) {
-        copyBoard();
+        BoardState state = copyBoard();
         ply++;
         
         repetitionTable[repetitionIndex] = hashKey;
@@ -376,7 +376,7 @@ int negamax(int alpha, int beta, int depth) {
         
         ply--;
         repetitionIndex--;
-        restoreBoard();
+        restoreBoard(state);
         
         if (stopped == 1) return 0;
         
@@ -469,6 +469,7 @@ void searchPosition(int depth) {
         if ((score <= alpha) || (score >= beta)) {
             alpha = -infinity;
             beta = infinity;
+            currentDepth--;
             continue;
         }
         
@@ -525,13 +526,13 @@ void searchPosition(int depth) {
             // Only consider moves that appear in the PV table (legal, searched moves)
             // We approximate by checking if this move matches one of the PV first moves
             // across all completed depths. As a simpler proxy: just use all legal moves.
-            copyBoard();
+            BoardState state = copyBoard();
             ply = 0;
             if (makeMove(move, allMoves) == 0) {
-                restoreBoard();
+                restoreBoard(state);
                 continue;
             }
-            restoreBoard();
+            restoreBoard(state);
             
             // Score this move: use its order in the sorted list as a proxy for engine score,
             // then add noise. For the PV (best) move we use the actual search score; for

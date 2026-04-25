@@ -87,11 +87,11 @@ static long perft(int depth) {
     generateMoves(ml);
     long total = 0;
     for (int i = 0; i < ml->count; i++) {
-        copyBoard();
+        BoardState state = copyBoard();
         ply = 0;
-        if (makeMove(ml->moves[i], allMoves) == 0) { restoreBoard(); continue; }
+        if (makeMove(ml->moves[i], allMoves) == 0) { restoreBoard(state); continue; }
         total += perft(depth - 1);
-        restoreBoard();
+        restoreBoard(state);
     }
     return total;
 }
@@ -114,9 +114,9 @@ static bool moveIsLegal(const char *s) {
                      (pp==B||pp==b)?'b':(pp==N||pp==n)?'n':0;
             if (c != promo) continue;
         }
-        copyBoard(); ply = 0;
+        BoardState state = copyBoard(); ply = 0;
         bool legal = (makeMove(m, allMoves) != 0);
-        restoreBoard();
+        restoreBoard(state);
         if (legal) return true;
     }
     return false;
@@ -241,6 +241,8 @@ static void testTacticalPositions() {
                 "pin: Be2-d3 is illegal (bishop is pinned to the king)");
     TEST_ASSERT(!moveIsLegal("e2f3"),
                 "pin: Be2-f3 is illegal (bishop is pinned to the king)");
+    TEST_ASSERT(parseMove("e2d3") == 0,
+                "parseMove rejects pseudo-legal pinned moves");
 
     // ── En passant move is in the legal move list ─────────────────────────
     // White pawn e5, black just played d7-d5 so ep square is d6.
@@ -315,9 +317,8 @@ static void testSkillLevel() {
             generateMoves(ml);
             bool allLegal = true;
             for (int i = 0; i < ml->count; i++) {
-                copyBoard(); ply = 0;
+                BoardState state = copyBoard(); ply = 0;
                 bool legal = (makeMove(ml->moves[i], allMoves) != 0);
-                restoreBoard();
                 // If a move in the pseudo-legal list IS made, verify king not in check
                 // (makeMove already enforces this — we just confirm no move slips through)
                 if (legal) {
@@ -325,9 +326,8 @@ static void testSkillLevel() {
                     // king is not attacked (makeMove already checks this, but belt+braces)
                     int kingSq = getLSBindex(bitboards[side == white ? k : K]);
                     if (isAttacked(kingSq, side)) { allLegal = false; }
-                    copyBoard(); ply = 0; restoreBoard(); // no-op restore
                 }
-                // Undo the move (we already restored above)
+                restoreBoard(state);
             }
             char label[80];
             snprintf(label, sizeof(label),
@@ -346,6 +346,12 @@ static void testSkillLevel() {
 
 static void testRepetitionDetection() {
     printHeader("Repetition detection");
+
+    parseFEN(startPosition);
+    U64 startHash = hashKey;
+    parsePosition("position startpos moves g1f3");
+    TEST_ASSERT(repetitionIndex == 1 && repetitionTable[0] == startHash,
+                "parsePosition records the pre-move hash before incrementing repetitionIndex");
 
     parseFEN("4k3/8/8/8/8/8/8/4K2R w - - 0 1");
 

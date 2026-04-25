@@ -88,7 +88,7 @@ void readInput() {
 
         if (strlen(input) > 0) { 
             if (!strncmp(input, "quit", 4)) quit = 1;
-            else if (!strncmp(input, "stop", 4)) quit = 1;
+            else if (!strncmp(input, "stop", 4)) stopped = 1;
         }
     }
 }
