@@ -51,6 +51,9 @@
 // Position management
 #include "position.h"
 
+// Neural network evaluation
+#include "nnue.h"
+
 // Evaluation
 #include "evaluation.h"
 

@@ -18,6 +18,7 @@
 
 #include "evaluation.h"
 #include "bitboard.h"
+#include "nnue.h"
 
 /************ Material Scores ************/
 int materialScore[12] = {
@@ -200,7 +201,7 @@ void initEvaluationMasks() {
 }
 
 /************ Evaluation Function ************/
-int evaluate() { 
+int evaluateClassical() { 
     int score = 0; 
     U64 bb;
     int piece, square; 
@@ -264,4 +265,20 @@ int evaluate() {
     
     // Return score relative to side to move
     return (side == white) ? score : -score;
+}
+
+int evaluate() {
+    if (isNNUEEnabled()) {
+        return evaluateNNUE();
+    }
+    return evaluateClassical();
+}
+
+/************ NNUE Evaluation Mode ************/
+void setUseNNUE(bool enabled) {
+    setNNUEEnabled(enabled);
+}
+
+bool getUseNNUE() {
+    return isNNUEEnabled();
 }

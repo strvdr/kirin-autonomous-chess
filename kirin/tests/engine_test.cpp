@@ -29,6 +29,7 @@
 */
 
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
 #include <cstdlib>   // abs
 
@@ -63,6 +64,45 @@ static int testsFailed = 0;
 
 static void printHeader(const char *name) {
     printf("\n" ANSI_BOLD ANSI_CYAN "── %s ──" ANSI_RESET "\n", name);
+}
+
+static bool writeI32(FILE *file, std::int32_t value) {
+    return fwrite(&value, sizeof(value), 1, file) == 1;
+}
+
+static bool writeU32(FILE *file, std::uint32_t value) {
+    return fwrite(&value, sizeof(value), 1, file) == 1;
+}
+
+static bool writeTestNNUE(const char *path) {
+    FILE *file = fopen(path, "wb");
+    if (!file) return false;
+
+    const char magic[8] = { 'K', 'I', 'R', 'I', 'N', 'N', 'U', 'E' };
+    bool ok = fwrite(magic, sizeof(magic), 1, file) == 1;
+
+    const std::uint32_t featureCount = 12 * 64;
+    const std::uint32_t hiddenSize = 2;
+    ok = ok && writeU32(file, 1);             // format version
+    ok = ok && writeU32(file, featureCount);
+    ok = ok && writeU32(file, hiddenSize);
+    ok = ok && writeI32(file, 4096);          // activation limit
+    ok = ok && writeI32(file, 13);            // output bias
+
+    ok = ok && writeI32(file, 0) && writeI32(file, 0);  // hidden biases
+    ok = ok && writeI32(file, 1) && writeI32(file, -1); // output weights
+
+    for (std::uint32_t feature = 0; feature < featureCount; feature++) {
+        std::int32_t w0 = 0;
+        std::int32_t w1 = 0;
+        if (feature == static_cast<std::uint32_t>(Q * 64 + f1)) {
+            w0 = 300;
+        }
+        ok = ok && writeI32(file, w0) && writeI32(file, w1);
+    }
+
+    fclose(file);
+    return ok;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -136,6 +176,8 @@ static void testPerft() {
 static void testEvaluationSanity() {
     printHeader("Evaluation sanity");
 
+    setUseNNUE(false);
+
     parseFEN(startPosition);
     TEST_ASSERT(abs(evaluate()) < 100,
                 "starting position evaluates near 0 (|score| < 100cp)");
@@ -160,6 +202,87 @@ static void testEvaluationSanity() {
     TEST_ASSERT(withQ > withR, "K+Q scores higher than K+R");
     TEST_ASSERT(withR > withP, "K+R scores higher than K+P");
     TEST_ASSERT(withP > 0,     "single pawn up is positive for side to move");
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Suite 2b – NNUE scaffold
+// ─────────────────────────────────────────────────────────────────────────────
+
+static void testNNUEScaffold() {
+    printHeader("NNUE scaffold");
+
+    TEST_ASSERT(isNNUEInitialized(),
+                "initAll() initializes the built-in NNUE bootstrap network");
+
+    parseFEN(startPosition);
+    setUseNNUE(false);
+    int classicalStart = evaluate();
+    setUseNNUE(true);
+    int nnueStart = evaluate();
+
+    TEST_ASSERT(getUseNNUE(),
+                "setUseNNUE(true) enables NNUE evaluation mode");
+    TEST_ASSERT(abs(nnueStart) < 100,
+                "NNUE starting position evaluates near 0 (|score| < 100cp)");
+    TEST_ASSERT(evaluateNNUE() == evaluate(),
+                "evaluate() routes to evaluateNNUE() when NNUE mode is enabled");
+
+    parseFEN("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1");
+    int whiteToMoveScore = evaluate();
+    parseFEN("4k3/8/8/8/8/8/8/4KQ2 b - - 0 1");
+    int blackToMoveScore = evaluate();
+    TEST_ASSERT(whiteToMoveScore == -blackToMoveScore,
+                "NNUE evaluation is relative to side to move");
+
+    parseFEN("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1");
+    int withQ = evaluate();
+    parseFEN("4k3/8/8/8/8/8/8/4KR2 w - - 0 1");
+    int withR = evaluate();
+    parseFEN("4k3/8/8/8/8/8/8/4KP2 w - - 0 1");
+    int withP = evaluate();
+
+    TEST_ASSERT(withQ > withR,
+                "NNUE bootstrap scores K+Q higher than K+R");
+    TEST_ASSERT(withR > withP,
+                "NNUE bootstrap scores K+R higher than K+P");
+    TEST_ASSERT(withP > 0,
+                "NNUE bootstrap scores a single pawn as positive");
+
+    setUseNNUE(false);
+    TEST_ASSERT(!getUseNNUE(),
+                "setUseNNUE(false) restores classical evaluation mode");
+    parseFEN(startPosition);
+    TEST_ASSERT(evaluate() == evaluateClassical() && classicalStart == evaluateClassical(),
+                "classical evaluation remains callable after NNUE mode is disabled");
+
+    const char *testNet = "kirin_test_network.knnue";
+    TEST_ASSERT(writeTestNNUE(testNet),
+                "test harness writes a valid Kirin NNUE file");
+    TEST_ASSERT(loadNNUE(testNet),
+                "loadNNUE() accepts a valid Kirin NNUE file");
+    TEST_ASSERT(hasExternalNNUE(),
+                "hasExternalNNUE() reports a loaded external network");
+    TEST_ASSERT(strcmp(getNNUESource(), testNet) == 0,
+                "getNNUESource() reports the loaded NNUE file path");
+
+    setUseNNUE(true);
+    parseFEN("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1");
+    int loadedWhiteScore = evaluate();
+    parseFEN("4k3/8/8/8/8/8/8/4KQ2 b - - 0 1");
+    TEST_ASSERT(loadedWhiteScore == 313 && evaluate() == -313,
+                "loaded NNUE network produces the expected side-relative score");
+
+    TEST_ASSERT(!loadNNUE("missing-network.knnue"),
+                "loadNNUE() rejects missing files");
+    parseFEN("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1");
+    TEST_ASSERT(evaluate() == 313,
+                "failed NNUE loads leave the active network unchanged");
+
+    resetNNUEToBootstrap();
+    setUseNNUE(false);
+    TEST_ASSERT(!hasExternalNNUE(),
+                "resetNNUEToBootstrap() restores the built-in fallback network");
+    remove(testNet);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -392,6 +515,7 @@ int main() {
 
     testPerft();
     testEvaluationSanity();
+    testNNUEScaffold();
     testTacticalPositions();
     testSkillLevel();
     testRepetitionDetection();

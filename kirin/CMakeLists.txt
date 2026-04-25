@@ -85,6 +85,7 @@ set(ENGINE_SOURCES
     src/engine/attacks.cpp
     src/engine/movegen.cpp
     src/engine/position.cpp
+    src/engine/nnue.cpp
     src/engine/evaluation.cpp
     src/engine/search.cpp
     src/engine/uci.cpp
@@ -99,6 +100,7 @@ set(ENGINE_HEADERS
     src/engine/attacks.h
     src/engine/movegen.h
     src/engine/position.h
+    src/engine/nnue.h
     src/engine/evaluation.h
     src/engine/search.h
     src/engine/uci.h
@@ -235,6 +237,37 @@ add_custom_target(test_report
         ui_controller_test
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running all tests and writing tests/TEST_RESULTS.md"
+)
+
+# Writes a deterministic, format-valid NNUE file for loader smoke tests and
+# manual UCI experiments. Production-strength nets should be trained separately.
+add_custom_target(bootstrap_nnue
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/networks
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/write_bootstrap_nnue.py
+            --output ${CMAKE_BINARY_DIR}/networks/bootstrap.knnue
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Writing ${CMAKE_BINARY_DIR}/networks/bootstrap.knnue"
+)
+
+add_custom_target(nnue_tool_smoke
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/networks
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/pgn_to_training_csv.py
+            --help
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/train_nnue.py
+            --self-test
+            --epochs 3
+            --output ${CMAKE_BINARY_DIR}/networks/trained-smoke.knnue
+            --checkpoint ${CMAKE_BINARY_DIR}/networks/trained-smoke.json
+    COMMAND python3 ${CMAKE_SOURCE_DIR}/tools/convert_nnue.py
+            --input ${CMAKE_BINARY_DIR}/networks/trained-smoke.json
+            --output ${CMAKE_BINARY_DIR}/networks/converted-smoke.knnue
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+    COMMENT "Training and converting a smoke-test NNUE network"
+)
+
+add_test(
+    NAME NNUEToolSmoke
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target nnue_tool_smoke
 )
 
 # ============================================

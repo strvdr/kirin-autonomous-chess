@@ -49,6 +49,11 @@ extern U64 passedBlackMasks[64];
 void initEvaluationMasks();
 
 /************ Evaluation Function ************/
+int evaluateClassical();
 int evaluate();
+
+/************ NNUE Evaluation Mode ************/
+void setUseNNUE(bool enabled);
+bool getUseNNUE();
 
 #endif // KIRIN_EVALUATION_H

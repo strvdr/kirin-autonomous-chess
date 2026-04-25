@@ -24,6 +24,7 @@
 #include "utils.h"
 #include "attacks.h"
 #include "zobrist.h"
+#include "nnue.h"
 #include "evaluation.h"
 #include "search.h"
 
@@ -149,5 +150,6 @@ void initAll() {
     initSliderAttacks(rook_slider);
     initRandKeys();
     initEvaluationMasks();
+    initNNUE();
     clearTranspositionTable();
 }

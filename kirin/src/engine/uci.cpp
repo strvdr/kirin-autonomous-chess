@@ -24,8 +24,22 @@
 #include "bitboard.h"
 #include "movegen.h"
 #include "position.h"
+#include "evaluation.h"
+#include "nnue.h"
 #include "search.h"
 #include "utils.h"
+
+static char *trimOptionValue(char *value) {
+    while (*value == ' ') value++;
+
+    char *end = value + strlen(value);
+    while (end > value && (end[-1] == '\n' || end[-1] == '\r' || end[-1] == ' ')) {
+        end--;
+        *end = '\0';
+    }
+
+    return value;
+}
 
 /************ Parse Move String ************/
 int parseMove(const char *moveString) { 
@@ -196,6 +210,8 @@ void uciLoop() {
     printf("id name Kirin\n");
     printf("id author Strydr Silverberg\n");
     printf("option name Skill Level type spin default 2 min 0 max 2\n");
+    printf("option name Use NNUE type check default false\n");
+    printf("option name EvalFile type string default <empty>\n");
     printf("uciok\n");
     
     while (1) {
@@ -232,6 +248,8 @@ void uciLoop() {
             printf("id name Kirin\n");
             printf("id author Strydr Silverberg\n");
             printf("option name Skill Level type spin default 2 min 0 max 2\n");
+            printf("option name Use NNUE type check default false\n");
+            printf("option name EvalFile type string default <empty>\n");
             printf("uciok\n");
         }
         else if (strncmp(input, "setoption name Skill Level value", 32) == 0) {
@@ -240,6 +258,29 @@ void uciLoop() {
             if (level > 2) level = 2;
             skillLevel = level;
             printf("info string Skill Level set to %d\n", skillLevel);
+        }
+        else if (strncmp(input, "setoption name Use NNUE value", 29) == 0) {
+            const char *value = input + 30;
+            int enabled = (strncmp(value, "true", 4) == 0 ||
+                           strncmp(value, "on", 2) == 0 ||
+                           strncmp(value, "1", 1) == 0);
+            setUseNNUE(enabled != 0);
+            clearTranspositionTable();
+            printf("info string Use NNUE set to %s\n", getUseNNUE() ? "true" : "false");
+        }
+        else if (strncmp(input, "setoption name EvalFile value", 29) == 0) {
+            char *value = trimOptionValue(input + 29);
+
+            if (value[0] == '\0' || strcmp(value, "<empty>") == 0) {
+                resetNNUEToBootstrap();
+                clearTranspositionTable();
+                printf("info string EvalFile reset to builtin bootstrap network\n");
+            } else if (loadNNUE(value)) {
+                clearTranspositionTable();
+                printf("info string EvalFile loaded %s\n", getNNUESource());
+            } else {
+                printf("info string EvalFile load failed: %s\n", getNNUELastError());
+            }
         }
     }
 }
