@@ -51,6 +51,11 @@
 
 # Build directory
 build/
+!build/
+build/*
+!build/networks/
+build/networks/*
+!build/networks/kirin-lichess.knnue
 build-*/
 cmake-build-*/
 kirin/build/
@@ -86,9 +91,10 @@ __pycache__/
 
 # Local NNUE training data and generated networks
 data/
-networks/
+/networks/
 kirin/networks/
 *.knnue
+!build/networks/kirin-lichess.knnue
 *.nnue
 
 # Manim/video artifacts
