@@ -126,7 +126,8 @@ U64 isolatedMasks[64];
 U64 passedWhiteMasks[64];
 U64 passedBlackMasks[64];
 
-static int nnueBlendPercent = 50;
+static int nnueBlendPercent = 0;
+static bool nnueResidualMode = false;
 
 /************ Helper Function ************/
 static U64 setFileRankMask(int fileNumber, int rankNumber) { 
@@ -273,6 +274,9 @@ int evaluate() {
     if (isNNUEEnabled()) {
         int classicalScore = evaluateClassical();
         int nnueScore = evaluateNNUE();
+        if (nnueResidualMode) {
+            return classicalScore + (nnueScore * nnueBlendPercent) / 100;
+        }
         return (classicalScore * (100 - nnueBlendPercent) + nnueScore * nnueBlendPercent) / 100;
     }
     return evaluateClassical();
@@ -295,4 +299,12 @@ void setNNUEBlend(int percent) {
 
 int getNNUEBlend() {
     return nnueBlendPercent;
+}
+
+void setNNUEResidualMode(bool enabled) {
+    nnueResidualMode = enabled;
+}
+
+bool getNNUEResidualMode() {
+    return nnueResidualMode;
 }

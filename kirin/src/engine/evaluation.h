@@ -57,5 +57,7 @@ void setUseNNUE(bool enabled);
 bool getUseNNUE();
 void setNNUEBlend(int percent);
 int getNNUEBlend();
+void setNNUEResidualMode(bool enabled);
+bool getNNUEResidualMode();
 
 #endif // KIRIN_EVALUATION_H

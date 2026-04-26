@@ -250,7 +250,8 @@ void uciLoop() {
     printf("id author Strydr Silverberg\n");
     printf("option name Skill Level type spin default 2 min 0 max 2\n");
     printf("option name Use NNUE type check default false\n");
-    printf("option name NNUE Blend type spin default 50 min 0 max 100\n");
+    printf("option name NNUE Blend type spin default 0 min 0 max 100\n");
+    printf("option name NNUE Residual type check default false\n");
     printf("option name EvalFile type string default <empty>\n");
     printf("option name Move Overhead type spin default 100 min 0 max 5000\n");
     printf("option name Slow Mover type spin default 85 min 10 max 200\n");
@@ -292,7 +293,8 @@ void uciLoop() {
             printf("id author Strydr Silverberg\n");
             printf("option name Skill Level type spin default 2 min 0 max 2\n");
             printf("option name Use NNUE type check default false\n");
-            printf("option name NNUE Blend type spin default 50 min 0 max 100\n");
+            printf("option name NNUE Blend type spin default 0 min 0 max 100\n");
+            printf("option name NNUE Residual type check default false\n");
             printf("option name EvalFile type string default <empty>\n");
             printf("option name Move Overhead type spin default 100 min 0 max 5000\n");
             printf("option name Slow Mover type spin default 85 min 10 max 200\n");
@@ -319,6 +321,15 @@ void uciLoop() {
             setNNUEBlend(parseOptionSpin(input, "setoption name NNUE Blend value", 0, 100));
             clearTranspositionTable();
             printf("info string NNUE Blend set to %d\n", getNNUEBlend());
+        }
+        else if (startsWith(input, "setoption name NNUE Residual value")) {
+            const char *value = input + 35;
+            int enabled = (strncmp(value, "true", 4) == 0 ||
+                           strncmp(value, "on", 2) == 0 ||
+                           strncmp(value, "1", 1) == 0);
+            setNNUEResidualMode(enabled != 0);
+            clearTranspositionTable();
+            printf("info string NNUE Residual set to %s\n", getNNUEResidualMode() ? "true" : "false");
         }
         else if (strncmp(input, "setoption name EvalFile value", 29) == 0) {
             char *value = trimOptionValue(input + 29);

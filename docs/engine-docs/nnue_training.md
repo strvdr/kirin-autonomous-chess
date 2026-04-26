@@ -104,6 +104,40 @@ Stockfish-style centipawn labels where positive means White is better. Use
 `--label-perspective side` only for data where positive means the side to move
 is better.
 
+The strongest current path is to train NNUE as a residual correction over
+Kirin's classical evaluator, then enable residual mode in UCI. This preserves
+the handcrafted material, pawn, and piece-square terms while letting the network
+learn the remaining Stockfish correction:
+
+```sh
+python3 kirin/tools/train_nnue.py \
+  --input data/lichess/training/broadcast-2025-07_2026-03-1m.csv \
+  --architecture hidden \
+  --target-mode residual-classical \
+  --hidden-size 128 \
+  --epochs 24 \
+  --learning-rate 0.003 \
+  --l2 0.000001 \
+  --batch-size 2048 \
+  --output build/networks/kirin-broadcast-residual-hidden128.knnue \
+  --checkpoint build/networks/kirin-broadcast-residual-hidden128.json \
+  --label-perspective white \
+  --seed 19
+```
+
+Use the residual net with:
+
+```text
+setoption name EvalFile value /path/to/kirin-broadcast-residual-hidden128.knnue
+setoption name Use NNUE value true
+setoption name NNUE Residual value true
+setoption name NNUE Blend value 100
+```
+
+`NNUE Blend` defaults to `0` for conservative competitive play. In residual
+mode, `100` means the full learned correction is added to the classical score;
+lower values scale the correction down.
+
 The JSON checkpoint is compact and can be converted later:
 
 ```sh

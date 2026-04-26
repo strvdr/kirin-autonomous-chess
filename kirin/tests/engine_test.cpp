@@ -216,24 +216,38 @@ static void testNNUEScaffold() {
 
     parseFEN(startPosition);
     setUseNNUE(false);
-    setNNUEBlend(50);
+    setNNUEBlend(0);
     int classicalStart = evaluate();
     setUseNNUE(true);
-    int blendedStart = evaluate();
-    int nnueStart = evaluateNNUE();
+    int classicalViaNNUEMode = evaluate();
 
     TEST_ASSERT(getUseNNUE(),
                 "setUseNNUE(true) enables NNUE evaluation mode");
-    TEST_ASSERT(getNNUEBlend() == 50,
-                "NNUE blend defaults to a 50 percent mix in tests");
+    TEST_ASSERT(getNNUEBlend() == 0,
+                "NNUE blend defaults to 0 percent for conservative competitive play");
+    TEST_ASSERT(classicalViaNNUEMode == classicalStart,
+                "NNUE mode with blend 0 preserves classical evaluation");
+
+    setNNUEBlend(50);
+    int blendedStart = evaluate();
+    int nnueStart = evaluateNNUE();
+
     TEST_ASSERT(blendedStart == (classicalStart + nnueStart) / 2,
-                "evaluate() blends classical and NNUE scores when NNUE mode is enabled");
+                "NNUE Blend 50 mixes classical and NNUE scores evenly");
     TEST_ASSERT(abs(blendedStart) < 100,
                 "blended NNUE starting position evaluates near 0 (|score| < 100cp)");
 
     setNNUEBlend(100);
     TEST_ASSERT(evaluateNNUE() == evaluate(),
                 "NNUE Blend 100 routes evaluate() to pure evaluateNNUE()");
+
+    setNNUEResidualMode(true);
+    setNNUEBlend(50);
+    parseFEN(startPosition);
+    TEST_ASSERT(evaluate() == evaluateClassical() + evaluateNNUE() / 2,
+                "NNUE residual mode adds a scaled NNUE correction to classical evaluation");
+    setNNUEResidualMode(false);
+    setNNUEBlend(100);
 
     parseFEN("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1");
     int whiteToMoveScore = evaluate();
@@ -287,7 +301,8 @@ static void testNNUEScaffold() {
                 "failed NNUE loads leave the active network unchanged");
 
     resetNNUEToBootstrap();
-    setNNUEBlend(50);
+    setNNUEResidualMode(false);
+    setNNUEBlend(0);
     setUseNNUE(false);
     TEST_ASSERT(!hasExternalNNUE(),
                 "resetNNUEToBootstrap() restores the built-in fallback network");
