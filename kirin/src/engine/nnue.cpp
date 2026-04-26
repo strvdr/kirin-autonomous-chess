@@ -42,6 +42,7 @@ struct Network {
     std::vector<int> featureWeights;
     std::string source;
     bool external;
+    bool linearFeatureFastPath;
 };
 
 static bool nnueInitialized = false;
@@ -155,7 +156,31 @@ static Network makeEmptyNetwork(int hiddenSize, int activationLimit) {
     net.featureWeights.assign(nnueFeatureCount * hiddenSize, 0);
     net.source = "empty";
     net.external = false;
+    net.linearFeatureFastPath = false;
     return net;
+}
+
+static bool isLinearFeatureNetwork(const Network& net) {
+    if (net.hiddenSize != nnueFeatureCount || net.activationLimit != 1) {
+        return false;
+    }
+
+    for (int hidden = 0; hidden < net.hiddenSize; hidden++) {
+        if (net.hiddenBiases[hidden] != 0) {
+            return false;
+        }
+    }
+
+    for (int feature = 0; feature < nnueFeatureCount; feature++) {
+        for (int hidden = 0; hidden < net.hiddenSize; hidden++) {
+            int expected = (hidden == feature) ? 1 : 0;
+            if (featureWeight(net, feature, hidden) != expected) {
+                return false;
+            }
+        }
+    }
+
+    return true;
 }
 
 static Network makeBootstrapNetwork() {
@@ -269,6 +294,8 @@ bool loadNNUE(const char *path) {
         return false;
     }
 
+    loaded.linearFeatureFastPath = isLinearFeatureNetwork(loaded);
+
     network = loaded;
     nnueInitialized = true;
     nnueLastError.clear();
@@ -298,6 +325,21 @@ bool hasExternalNNUE() {
 int evaluateNNUE() {
     if (!nnueInitialized) {
         initNNUE();
+    }
+
+    if (network.linearFeatureFastPath) {
+        int score = network.outputBias;
+
+        for (int piece = P; piece <= k; piece++) {
+            U64 bb = bitboards[piece];
+            while (bb) {
+                int square = getLSBindex(bb);
+                score += network.outputWeights[featureIndex(piece, square)];
+                popBit(bb, square);
+            }
+        }
+
+        return (side == white) ? score : -score;
     }
 
     std::vector<int> accumulator = network.hiddenBiases;

@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include "uci.h"
 #include "types.h"
 #include "bitboard.h"
@@ -39,6 +40,46 @@ static char *trimOptionValue(char *value) {
     }
 
     return value;
+}
+
+static int moveOverheadMs = 100;
+static int slowMover = 60;
+static int maxManagedMoveTimeMs = 500;
+
+static int parsePositiveInt(char *value, int fallback) {
+    int parsed = atoi(value);
+    return parsed > 0 ? parsed : fallback;
+}
+
+static int parseOptionSpin(const char *input, const char *prefix, int minimum, int maximum) {
+    int value = atoi(input + strlen(prefix));
+    if (value < minimum) return minimum;
+    if (value > maximum) return maximum;
+    return value;
+}
+
+static bool startsWith(const char *input, const char *prefix) {
+    return strncmp(input, prefix, strlen(prefix)) == 0;
+}
+
+static int calculateManagedMoveTime(int remainingMs, int incrementMs, int movesLeft) {
+    if (remainingMs <= moveOverheadMs) {
+        return 1;
+    }
+
+    int divisor = movesLeft > 0 ? movesLeft : 40;
+    int base = (remainingMs * slowMover) / (100 * divisor);
+    int incrementUse = (incrementMs * slowMover) / 200;
+    int budget = base + incrementUse - moveOverheadMs;
+
+    int hardCap = std::max(1, (remainingMs - moveOverheadMs) / 8);
+    if (maxManagedMoveTimeMs > 0) {
+        hardCap = std::min(hardCap, maxManagedMoveTimeMs);
+    }
+
+    budget = std::max(1, budget);
+    budget = std::min(budget, hardCap);
+    return budget;
 }
 
 /************ Parse Move String ************/
@@ -146,7 +187,7 @@ void parseGo(char *command) {
     
     // Moves to go
     if ((argument = strstr(command, "movestogo")))
-        movesToGo = atoi(argument + 10);
+        movesToGo = parsePositiveInt(argument + 10, movesToGo);
     
     // Move time
     if ((argument = strstr(command, "movetime")))
@@ -174,23 +215,21 @@ void parseGo(char *command) {
     // Time control
     if (timer != -1) {
         timeSet = 1;
-        timer /= movesToGo;
-        timer -= 50;  // Lag compensation
-        
-        if (timer < 0) {
-            timer = 0;
-            inc -= 50;
-            if (inc < 0) inc = 1;
+
+        if (moveTime != -1) {
+            timer = std::max(1, moveTime - moveOverheadMs);
+        } else {
+            timer = calculateManagedMoveTime(timer, inc, movesToGo);
         }
-        
-        stopTime = startTime + timer + inc;        
+
+        stopTime = startTime + timer;
     }
     
     // Default depth
     if (depth == -1)
         depth = 64;
     
-    printf("time: %d  inc: %d  start: %lld  stop: %lld  depth: %d  timeset:%d\n",
+    printf("info string time %d inc %d start %lld stop %lld depth %d timeset %d\n",
            timer, inc,
            static_cast<long long>(startTime),
            static_cast<long long>(stopTime),
@@ -212,6 +251,9 @@ void uciLoop() {
     printf("option name Skill Level type spin default 2 min 0 max 2\n");
     printf("option name Use NNUE type check default false\n");
     printf("option name EvalFile type string default <empty>\n");
+    printf("option name Move Overhead type spin default 100 min 0 max 5000\n");
+    printf("option name Slow Mover type spin default 60 min 10 max 200\n");
+    printf("option name Max Managed Move Time type spin default 500 min 0 max 60000\n");
     printf("uciok\n");
     
     while (1) {
@@ -250,6 +292,9 @@ void uciLoop() {
             printf("option name Skill Level type spin default 2 min 0 max 2\n");
             printf("option name Use NNUE type check default false\n");
             printf("option name EvalFile type string default <empty>\n");
+            printf("option name Move Overhead type spin default 100 min 0 max 5000\n");
+            printf("option name Slow Mover type spin default 60 min 10 max 200\n");
+            printf("option name Max Managed Move Time type spin default 500 min 0 max 60000\n");
             printf("uciok\n");
         }
         else if (strncmp(input, "setoption name Skill Level value", 32) == 0) {
@@ -281,6 +326,18 @@ void uciLoop() {
             } else {
                 printf("info string EvalFile load failed: %s\n", getNNUELastError());
             }
+        }
+        else if (startsWith(input, "setoption name Move Overhead value")) {
+            moveOverheadMs = parseOptionSpin(input, "setoption name Move Overhead value", 0, 5000);
+            printf("info string Move Overhead set to %d\n", moveOverheadMs);
+        }
+        else if (startsWith(input, "setoption name Slow Mover value")) {
+            slowMover = parseOptionSpin(input, "setoption name Slow Mover value", 10, 200);
+            printf("info string Slow Mover set to %d\n", slowMover);
+        }
+        else if (startsWith(input, "setoption name Max Managed Move Time value")) {
+            maxManagedMoveTimeMs = parseOptionSpin(input, "setoption name Max Managed Move Time value", 0, 60000);
+            printf("info string Max Managed Move Time set to %d\n", maxManagedMoveTimeMs);
         }
     }
 }

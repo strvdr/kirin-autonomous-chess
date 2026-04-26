@@ -460,6 +460,7 @@ void searchPosition(int depth) {
     // Iterative deepening
     for (int currentDepth = 1; currentDepth <= depth; currentDepth++) { 
         if (stopped == 1) break;
+        std::int64_t depthStartTime = getTimeMS();
         
         followPV = 1;
         score = negamax(alpha, beta, currentDepth);
@@ -497,6 +498,15 @@ void searchPosition(int depth) {
             printf(" ");
         }
         printf("\n");
+
+        if (timeSet == 1) {
+            std::int64_t now = getTimeMS();
+            std::int64_t lastDepthTime = now - depthStartTime;
+            std::int64_t remaining = stopTime - now;
+            if (remaining <= 0 || lastDepthTime * 2 > remaining) {
+                break;
+            }
+        }
     }
     
     // Print best move
