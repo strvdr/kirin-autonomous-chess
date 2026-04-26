@@ -297,6 +297,23 @@ int BoardScanner::toSquareIndex(int muxIndex, int channel) {
     return row * 8 + col;
 }
 
+int BoardScanner::toStorageSlot(bool isWhiteSide, int channel) {
+    if (channel < 0 || channel >= CHANNELS_PER_MUX) {
+        return -1;
+    }
+
+    if (isWhiteSide) {
+        // White storage wiring matches StartingSlot numbering directly:
+        // ch0-7 = R1,R2,B1,B2,N1,N2,Q,K and ch8-15 = P1-P8.
+        return channel;
+    }
+
+    // Black storage is visually flipped: ch0-7 are the left pawn column and
+    // ch8-15 are the right back-rank column. Normalize into StartingSlot
+    // numbering so the rest of the software can stay slot-centric.
+    return (channel < 8) ? (channel + 8) : (channel - 8);
+}
+
 /************ Board Scanning ************/
 
 Bitboard BoardScanner::scanBoard() {
@@ -369,7 +386,10 @@ uint16_t BoardScanner::scanStorage(bool isWhiteSide) {
         setMuxChannel(channel);
 
         if (readMuxOutput(muxIndex)) {
-            result |= (1 << channel);
+            int slot = toStorageSlot(isWhiteSide, channel);
+            if (slot >= 0) {
+                result |= (1 << slot);
+            }
         }
     }
 
@@ -905,11 +925,11 @@ void BoardScanner::printScan(Bitboard scan) {
 
 void BoardScanner::printStorageScan(uint16_t storage, bool isWhiteSide) {
     printf("\n  %s Storage Zone:\n", isWhiteSide ? "White" : "Black");
-    printf("    Pieces (slots 0-7):  ");
+    printf("    Back-rank slots R1..K: ");
     for (int i = 0; i < 8; i++) {
         printf("%c ", (storage & (1 << i)) ? '#' : '.');
     }
-    printf("\n    Pawns  (slots 8-15): ");
+    printf("\n    Pawn slots P1..P8:    ");
     for (int i = 8; i < 16; i++) {
         printf("%c ", (storage & (1 << i)) ? '#' : '.');
     }
@@ -965,9 +985,13 @@ void BoardScanner::diagnosticScan() {
             std::this_thread::sleep_for(std::chrono::milliseconds(5));
             bool present = readMuxOutput(mux);
 
-            const char* slotType = (channel < 8) ? "piece" : "pawn";
-            printf("    ch%2d → slot %2d (%s): %s\n",
-                   channel, channel, slotType,
+            int slot = toStorageSlot(i == 1, channel);
+            const char* slotNames[16] = {
+                "R1", "R2", "B1", "B2", "N1", "N2", "Q", "K",
+                "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8"
+            };
+            printf("    ch%2d → slot %-2s (#%2d): %s\n",
+                   channel, (slot >= 0 && slot < 16) ? slotNames[slot] : "??", slot,
                    present ? "PIECE" : "empty");
         }
         printf("\n");

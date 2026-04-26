@@ -100,6 +100,10 @@ public:
     int testToSquareIndex(int muxIndex, int channel) {
         return toSquareIndex(muxIndex, channel);
     }
+
+    int testToStorageSlot(bool isWhiteSide, int channel) {
+        return toStorageSlot(isWhiteSide, channel);
+    }
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -126,6 +130,24 @@ static void testHardwareMapping() {
 
     TEST_ASSERT(scanner.testToSquareIndex(0, 0) == -1, "MUX 0 is not a board mux");
     TEST_ASSERT(scanner.testToSquareIndex(5, 0) == -1, "MUX 5 is not a board mux");
+
+    TEST_ASSERT(scanner.testToStorageSlot(false, 0) == SLOT_P1,
+                "Black storage ch0 -> SLOT_P1");
+    TEST_ASSERT(scanner.testToStorageSlot(false, 7) == SLOT_P8,
+                "Black storage ch7 -> SLOT_P8");
+    TEST_ASSERT(scanner.testToStorageSlot(false, 8) == SLOT_R1,
+                "Black storage ch8 -> SLOT_R1");
+    TEST_ASSERT(scanner.testToStorageSlot(false, 15) == SLOT_K,
+                "Black storage ch15 -> SLOT_K");
+
+    TEST_ASSERT(scanner.testToStorageSlot(true, 0) == SLOT_R1,
+                "White storage ch0 -> SLOT_R1");
+    TEST_ASSERT(scanner.testToStorageSlot(true, 7) == SLOT_K,
+                "White storage ch7 -> SLOT_K");
+    TEST_ASSERT(scanner.testToStorageSlot(true, 8) == SLOT_P1,
+                "White storage ch8 -> SLOT_P1");
+    TEST_ASSERT(scanner.testToStorageSlot(true, 15) == SLOT_P8,
+                "White storage ch15 -> SLOT_P8");
 }
 
 // ─────────────────────────────────────────────────────────────

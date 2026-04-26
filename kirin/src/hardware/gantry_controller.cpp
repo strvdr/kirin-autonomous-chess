@@ -146,11 +146,11 @@ std::string moveCommand(const Position& pos) {
 }
 
 std::string magnetOn() {
-    return "M3";
+    return "M8";
 }
 
 std::string magnetOff() {
-    return "M5";
+    return "M9";
 }
 
 std::string dwell(int milliseconds) {
@@ -421,7 +421,7 @@ static const char* grblErrorDescription(int code) {
         case 35: return "The G35 or G38.x probing cycle failed to trigger within the machine travel";
         case 36: return "The probe did not contact the workpiece within the programmed travel";
         case 37: return "Probe protection feature triggered during probing";
-        case 38: return "Spindle control G-code (M3, M4, M5) is not supported in current state";
+        case 38: return "Coolant control G-code (M7, M8, M9) is not supported in current state";
         default: return "Unknown error";
     }
 }
@@ -522,8 +522,8 @@ bool GrblController::waitForOk(int) {
 
 // Annotate a G-code command for dry-run output
 static const char* annotateGcode(const std::string& cmd) {
-    if (cmd == "M3")                    return "  ; MAGNET ON";
-    if (cmd == "M5")                    return "  ; MAGNET OFF";
+    if (cmd == "M8")                    return "  ; MAGNET ON";
+    if (cmd == "M9")                    return "  ; MAGNET OFF";
     if (cmd == "$H")                    return "  ; HOME (seek limit switches)";
     if (cmd == "G20")                   return "  ; UNITS inches";
     if (cmd == "G90")                   return "  ; ABSOLUTE positioning";
@@ -579,9 +579,9 @@ bool GrblController::sendCommand(const std::string& cmd) {
             double x = currentPos.x, y = currentPos.y;
             sscanf(cmd.c_str(), "G1 X%lf Y%lf", &x, &y);
             currentPos = Position(x, y);
-        } else if (cmd == "M3") {
+        } else if (cmd == "M8") {
             magnetEngaged = true;
-        } else if (cmd == "M5") {
+        } else if (cmd == "M9") {
             magnetEngaged = false;
         }
         return true;
@@ -597,9 +597,9 @@ bool GrblController::sendCommand(const std::string& cmd) {
         if (sscanf(cmd.c_str(), "G1 X%lf Y%lf", &x, &y) >= 2) {
             currentPos = Position(x, y);
         }
-    } else if (cmd == "M3") {
+    } else if (cmd == "M8") {
         magnetEngaged = true;
-    } else if (cmd == "M5") {
+    } else if (cmd == "M9") {
         magnetEngaged = false;
     } else if (cmd == "$H") {
         currentPos = Position(0, 0);

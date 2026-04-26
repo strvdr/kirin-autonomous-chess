@@ -349,7 +349,28 @@ static void testCaptureGcodeUsesExactSlot() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 4f. Gantry refuses capture plans without exact slot identity
+// 4f. Storage columns match the physical white/black layouts
+// ─────────────────────────────────────────────────────────────
+static void testStorageColumnLayouts() {
+    printHeader("Storage column layouts");
+
+    Gantry::Position whiteP5 = Gantry::getCapturePosition(true, Gantry::SLOT_P5);
+    Gantry::Position whiteR1 = Gantry::getCapturePosition(true, Gantry::SLOT_R1);
+    Gantry::Position blackP5 = Gantry::getCapturePosition(false, Gantry::SLOT_P5);
+    Gantry::Position blackR1 = Gantry::getCapturePosition(false, Gantry::SLOT_R1);
+
+    TEST_ASSERT(whiteP5 == Gantry::Position(19.000, 10.420),
+                "white P5 is in the visual right column");
+    TEST_ASSERT(whiteR1 == Gantry::Position(17.500, 4.420),
+                "white R1 is in the visual left column");
+    TEST_ASSERT(blackP5 == Gantry::Position(1.500, 10.420),
+                "black P5 is in the visual left column");
+    TEST_ASSERT(blackR1 == Gantry::Position(3.000, 4.420),
+                "black R1 is in the visual right column");
+}
+
+// ─────────────────────────────────────────────────────────────
+// 4g. Gantry refuses capture plans without exact slot identity
 // ─────────────────────────────────────────────────────────────
 static void testGantryRejectsCaptureWithoutSlot() {
     printHeader("Gantry rejects slotless capture");
@@ -372,7 +393,7 @@ static void testGantryRejectsCaptureWithoutSlot() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 4g. GRBL timing and motion-mode commands
+// 4h. GRBL timing and motion-mode commands
 // ─────────────────────────────────────────────────────────────
 static void testGrblTimingAndMotionSetup() {
     printHeader("GRBL timing and motion setup");
@@ -388,8 +409,13 @@ static void testGrblTimingAndMotionSetup() {
         TEST_ASSERT(setup[0] == "G20", "motion setup selects inches");
         TEST_ASSERT(setup[1] == "G90", "motion setup selects absolute positioning");
         TEST_ASSERT(setup[2] == "G94", "motion setup selects units-per-minute feed");
-        TEST_ASSERT(setup[3] == "M5", "motion setup leaves magnet off");
+        TEST_ASSERT(setup[3] == "M9", "motion setup leaves magnet off");
     }
+
+    TEST_ASSERT(Gantry::magnetOn() == std::string("M8"),
+                "magnet on uses GRBL coolant enable");
+    TEST_ASSERT(Gantry::magnetOff() == std::string("M9"),
+                "magnet off uses GRBL coolant disable");
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -697,6 +723,7 @@ int main() {
     testTrackerValidity();
     testEngineCaptureRequiresExactTracker();
     testCaptureGcodeUsesExactSlot();
+    testStorageColumnLayouts();
     testGantryRejectsCaptureWithoutSlot();
     testGrblTimingAndMotionSetup();
     testParseBoardMove();

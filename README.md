@@ -64,7 +64,7 @@ Y = 4.420" to 14.920"      Y = 4.420" to 14.920"
 | Storage columns | Black: X `3.000` inner, `1.500` outer; White: X `17.500` inner, `19.000` outer |
 | Motion controller | GRBL 1.1 |
 | Serial connection | 115200 baud, 8N1 |
-| Piece actuation | Electromagnet (M3/M5 spindle commands) |
+| Piece actuation | Electromagnet (M8/M9 coolant commands) |
 | Piece detection | 96× A3144 hall effect sensors (active-low, 10K pull-up) |
 | Sensor muxing | 6× CD74HC4067 16:1 multiplexers, 4 shared select lines |
 | Sensor controller | Raspberry Pi GPIO (libgpiod) |
@@ -315,12 +315,12 @@ Example dry-run output:
   G20                             ; UNITS inches
   G90                             ; ABSOLUTE positioning
   G94                             ; FEED units/min
-  M5                              ; MAGNET OFF
+  M9                              ; MAGNET OFF
   G1 X6.50 Y10.42                 ; MOVE
-  M3                              ; MAGNET ON
+  M8                              ; MAGNET ON
   G4 P0.100                       ; DWELL (settle)
   G1 X9.50 Y10.42                 ; MOVE
-  M5                              ; MAGNET OFF
+  M9                              ; MAGNET OFF
   ...
 ```
 
@@ -386,14 +386,14 @@ The codebase uses two coordinate systems that are explicitly converted at the en
 
 ## Storage Zone Layout
 
-Captured pieces are stored in two zones flanking the board. Each zone has two columns (back-rank pieces / pawns) with 1.5-inch vertical spacing matching the board squares. Each storage slot is monitored by a dedicated hall effect sensor, enabling the system to detect *which specific slot* a captured piece was placed in.
+Captured pieces are stored in two zones flanking the board. Each zone has two columns with 1.5-inch vertical spacing matching the board squares. Each storage slot is monitored by a dedicated hall effect sensor, enabling the system to detect *which specific slot* a captured piece was placed in.
 
 | Zone | Side | Mux | Contents |
 |---|---|---|---|
-| Black storage | Left of a-file | 0 | White pieces taken by black |
-| White storage | Right of h-file | 5 | Black pieces taken by white |
+| Black storage | Left of a-file | 0 | Black pieces |
+| White storage | Right of h-file | 5 | White pieces |
 
-Within each zone, slots are assigned to specific starting pieces. The inner column is immediately adjacent to the board; the outer column is farther from the board.
+Within each zone, slots are assigned to specific starting pieces. The inner column is immediately adjacent to the board; the outer column is farther from the board. Viewed from White's side, white storage has `R1..K` in the visual left column and `P1..P8` in the visual right column, while black storage is visually flipped with `P1..P8` on the left and `R1..K` on the right. The mux wiring follows the visual columns directly: channels `0-7` are the left column top-to-bottom, and channels `8-15` are the right column top-to-bottom.
 
 | Channel | Inner column slot | Channel | Outer column slot |
 |---|---|---|---|

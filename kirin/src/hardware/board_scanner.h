@@ -34,8 +34,12 @@
 *        MUX 5: white storage (right side of board)    → 16 sensors
 *
 *      Each storage mux has 16 channels mapped to slots:
-*        Channels 0-7:  back-rank piece slots (col 1, inner)
-*        Channels 8-15: pawn slots (col 2, outer)
+*        Channels 0-7:  left column, top to bottom
+*        Channels 8-15: right column, top to bottom
+*
+*      The two sides use different left/right labels:
+*        MUX 0 (black storage): ch0-7 = P1-P8, ch8-15 = R1,R2,B1,B2,N1,N2,Q,K
+*        MUX 5 (white storage): ch0-7 = R1,R2,B1,B2,N1,N2,Q,K, ch8-15 = P1-P8
 *
 *    Wiring:
 *    ───────
@@ -166,6 +170,12 @@ private:
      * Mux 4, channel 15 → square 63 (h1)
      */
     int toSquareIndex(int muxIndex, int channel);
+
+    /**
+     * Map a storage mux channel to the normalized StartingSlot index used by
+     * PieceTracker and move matching.
+     */
+    int toStorageSlot(bool isWhiteSide, int channel);
 
     /**
      * Try to match an observed board + storage state against the engine's

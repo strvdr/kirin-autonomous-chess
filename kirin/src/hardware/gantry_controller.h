@@ -62,11 +62,12 @@ constexpr double A1_CENTER_X = 5.000;
 constexpr double A1_CENTER_Y = 4.420;
 
 /************ Capture Zone Layout ************/
-// Two vertical columns per side:
-//   Black side (left of file 1):  P1 R1 / P2 R2 / P3 N1 / P4 N2 / ...
-//   White side (right of file 8): R1 P1 / R2 P2 / N1 P3 / N2 P4 / ...
-// The inner column (closer to the board) holds back-rank pieces.
-// The outer column holds pawns P1-P8.
+// Two vertical columns per side as viewed from White's side of the board:
+//   Black storage (left of file a):  left column P1-P8, right column R1..K
+//   White storage (right of file h): left column R1..K, right column P1-P8
+// In coordinate terms:
+//   - White storage: inner column = R1/R2/.../K, outer column = P1-P8
+//   - Black storage: inner column = R1/R2/.../K, outer column = P1-P8
 // Storage squares are the same 1.5" grid as the board, so rows align exactly
 // with board-file Y coordinates.
 constexpr double CAPTURE_VERTICAL_SPACING = 1.5;

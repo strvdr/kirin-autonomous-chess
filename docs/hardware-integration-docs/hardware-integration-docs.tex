@@ -147,7 +147,7 @@ The system has four hardware subsystems that connect to the Pi:
     \item \textbf{Hall Effect Sensors (96 total)} --- detect piece presence on the board and in the two storage zones. Read through 6 multiplexers using 10 GPIO pins.
     \item \textbf{Operator UI} --- a 128$\times$64 I2C OLED for status messages plus Start, Stop, and Reset buttons on dedicated GPIO pins.
     \item \textbf{GRBL Gantry Controller} --- moves pieces on the physical board via an electromagnet on a 2-axis gantry. Communicates over USB serial.
-    \item \textbf{Electromagnet} --- controlled by the GRBL board via the spindle output (M3/M5 commands).
+    \item \textbf{Electromagnet} --- controlled by the GRBL board via the coolant output (M8/M9 commands).
 \end{enumerate}
 
 \section{System Architecture}
@@ -372,7 +372,7 @@ Muxes 1--4 scan the 64 board squares. Each board mux covers two adjacent files. 
 \caption{Board mux channel-to-square mapping}
 \end{table}
 
-Muxes 0 and 5 scan the storage zones. Mux 0 is black storage to the left of the a-file; mux 5 is white storage to the right of the h-file. In both zones, channels 0--7 are the inner column immediately adjacent to the board, and channels 8--15 are the outer pawn column.
+Muxes 0 and 5 scan the storage zones. Mux 0 is black storage to the left of the a-file; mux 5 is white storage to the right of the h-file. Viewed from White's side, channels 0--7 are the left column top-to-bottom and channels 8--15 are the right column top-to-bottom. That means white storage shows back-rank labels in the left column and pawn labels in the right column, while black storage is visually flipped.
 
 \begin{table}[H]
 \centering
@@ -468,7 +468,7 @@ The diagram below shows the complete mapping from every board square to its mux 
 
 \subsection{Storage Zone Sensor Map}
 
-The two storage zone muxes each have 16 channels mapped to exact piece storage slots. The black storage zone is left of the a-file on mux 0. The white storage zone is right of the h-file on mux 5. Each zone uses the same top-to-bottom order: R1, R2, B1, B2, N1, N2, Q, K in the inner column and P1--P8 in the outer column.
+The two storage zone muxes each have 16 channels mapped to exact piece storage slots. The black storage zone is left of the a-file on mux 0. The white storage zone is right of the h-file on mux 5. Channels 0--7 are always the visual left column top-to-bottom and channels 8--15 are the visual right column top-to-bottom. White storage therefore maps C0--C7 to R1, R2, B1, B2, N1, N2, Q, K and C8--C15 to P1--P8, while black storage is flipped with C0--C7 = P1--P8 and C8--C15 = R1, R2, B1, B2, N1, N2, Q, K.
 
 \begin{center}
 \begin{tikzpicture}[scale=0.85]
@@ -477,12 +477,12 @@ The two storage zone muxes each have 16 channels mapped to exact piece storage s
     
     % Black storage (left)
     \node[font=\large\bfseries] at (3.5, 1) {Black Storage --- Mux 0 (GPIO 5)};
-    \foreach \slot/\name in {0/R1,1/R2,2/B1,3/B2,4/N1,5/N2,6/Q,7/K} {
+    \foreach \slot/\name in {0/P1,1/P2,2/P3,3/P4,4/P5,5/P6,6/P7,7/P8} {
         \fill[storebk] (0, -\slot*0.9) rectangle ++(3.5, -0.9);
         \draw[gray] (0, -\slot*0.9) rectangle ++(3.5, -0.9);
         \node[font=\footnotesize] at (1.75, -\slot*0.9-0.45) {C\slot: \name};
     }
-    \foreach \slot/\name in {0/P1,1/P2,2/P3,3/P4,4/P5,5/P6,6/P7,7/P8} {
+    \foreach \slot/\name in {0/R1,1/R2,2/B1,3/B2,4/N1,5/N2,6/Q,7/K} {
         \pgfmathtruncatemacro{\chan}{\slot+8}
         \fill[storebk!60] (4, -\slot*0.9) rectangle ++(3.5, -0.9);
         \draw[gray] (4, -\slot*0.9) rectangle ++(3.5, -0.9);
@@ -504,8 +504,8 @@ The two storage zone muxes each have 16 channels mapped to exact piece storage s
     }
     
     \node[font=\footnotesize, text width=18cm, anchor=north west] at (0, -7.8) {%
-        \textbf{Inner column (C0--C7):} R1, R2, B1, B2, N1, N2, Q, K.\\
-        \textbf{Outer column (C8--C15):} P1, P2, P3, P4, P5, P6, P7, P8.
+        \textbf{Black storage left/right columns:} C0--C7 = P1, P2, P3, P4, P5, P6, P7, P8; C8--C15 = R1, R2, B1, B2, N1, N2, Q, K.\\
+        \textbf{White storage left/right columns:} C0--C7 = R1, R2, B1, B2, N1, N2, Q, K; C8--C15 = P1, P2, P3, P4, P5, P6, P7, P8.
     };
 \end{tikzpicture}
 \end{center}
@@ -606,20 +606,20 @@ Key settings to verify:
 
 \section{Electromagnet Control}
 
-The electromagnet is controlled through GRBL's spindle output:
+The electromagnet is controlled through GRBL's coolant output:
 
 \begin{itemize}
-    \item \texttt{M3} = Magnet ON (spindle CW --- repurposed for electromagnet)
-    \item \texttt{M5} = Magnet OFF (spindle stop)
+    \item \texttt{M8} = Magnet ON (coolant enable --- repurposed for electromagnet)
+    \item \texttt{M9} = Magnet OFF (coolant disable)
 \end{itemize}
 
-The CNC shield's spindle enable pin drives a MOSFET or relay that controls the electromagnet. Verify this works before running any game:
+The CNC shield's coolant enable pin drives a MOSFET or relay that controls the electromagnet. Verify this works before running any game:
 
 \begin{lstlisting}[language=bash]
 # In the GRBL console:
-M3     # Magnet should engage
+M8     # Magnet should engage
 G4 P2.000  # Wait 2 seconds; GRBL P values are seconds
-M5     # Magnet should release
+M9     # Magnet should release
 \end{lstlisting}
 
 \notebox{Kirin's \texttt{dwell(milliseconds)} helper accepts milliseconds but emits GRBL seconds. For example, the default pick/release settle time \texttt{dwell(100)} is sent as \texttt{G4 P0.100}. Sending \texttt{G4 P100} would pause for 100 seconds on GRBL, not 100 milliseconds.}
@@ -633,7 +633,7 @@ $H     # Home gantry
 G20    # Use inches
 G90    # Use absolute coordinates
 G94    # Feed rate is units per minute
-M5     # Ensure magnet is off
+M9     # Ensure magnet is off
 \end{lstlisting}
 
 \warningbox{Do not assume the GRBL controller is already in the correct modal state from a previous session. The software's coordinate constants and feed rates are expressed in inches and absolute G54 work coordinates, so \texttt{G20}, \texttt{G90}, and \texttt{G94} must be active before moving pieces.}
@@ -949,7 +949,7 @@ Homing fails & Verify limit switches are connected and GRBL setting \$22=1 (homi
 \addlinespace
 Gantry moves to wrong position & Recalibrate GRBL steps/inch (\$100, \$101) or adjust \texttt{A1\_CENTER\_X}/\texttt{A1\_CENTER\_Y} in the software \\
 \addlinespace
-Magnet doesn't engage & Check GRBL spindle output wiring, test with \texttt{M3}/\texttt{M5} in a serial console \\
+Magnet doesn't engage & Check GRBL coolant output wiring, test with \texttt{M8}/\texttt{M9} in a serial console \\
 \addlinespace
 Pieces dragged/knocked over & Reduce \texttt{FEED\_RATE} (default 1000 in/min), verify magnet strength is appropriate \\
 \addlinespace
