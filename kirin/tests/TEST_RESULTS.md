@@ -1,9 +1,9 @@
 # Kirin Chess Engine — Test Results
 
-> Generated: 2026-04-24 18:32 UTC  
+> Generated: 2026-04-26 13:56 UTC  
 > Run `cmake --build build --target test_report` to refresh.
 
-![tests](https://img.shields.io/badge/tests-389%2F389+passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-418%2F418+passing-brightgreen)
 
 ## Summary
 
@@ -12,8 +12,8 @@
 | Captured Piece Detection | ✅ | 10 | 0 | 0.00 s |
 | Board Interpreter | ✅ | 63 | 0 | 0.00 s |
 | Game Controller | ✅ | 260 | 0 | 0.01 s |
-| Engine Validity & Skill Level | ✅ | 56 | 0 | 0.21 s |
-| **Total** | ✅ | **389** | **0** | — |
+| Engine Validity & Skill Level | ✅ | 85 | 0 | 0.22 s |
+| **Total** | ✅ | **418** | **0** | — |
 
 ## Detail
 
@@ -510,7 +510,35 @@ _Perft node counts (4 positions × up to depth 4), evaluation sanity, tactical p
 </details>
 
 <details>
-<summary><b>Tactical position structure &nbsp;—&nbsp; 16/16 passed</b></summary>
+<summary><b>NNUE scaffold &nbsp;—&nbsp; 22/22 passed</b></summary>
+
+- ✅ initAll() initializes the built-in NNUE bootstrap network
+- ✅ setUseNNUE(true) enables NNUE evaluation mode
+- ✅ NNUE blend defaults to 0 percent for conservative competitive play
+- ✅ NNUE mode with blend 0 preserves classical evaluation
+- ✅ NNUE Blend 50 mixes classical and NNUE scores evenly
+- ✅ blended NNUE starting position evaluates near 0 (|score| < 100cp)
+- ✅ NNUE Blend 100 routes evaluate() to pure evaluateNNUE()
+- ✅ NNUE residual mode adds a scaled NNUE correction to classical evaluation
+- ✅ NNUE evaluation is relative to side to move
+- ✅ NNUE bootstrap scores K+Q higher than K+R
+- ✅ NNUE bootstrap scores K+R higher than K+P
+- ✅ NNUE bootstrap scores a single pawn as positive
+- ✅ setUseNNUE(false) restores classical evaluation mode
+- ✅ classical evaluation remains callable after NNUE mode is disabled
+- ✅ test harness writes a valid Kirin NNUE file
+- ✅ loadNNUE() accepts a valid Kirin NNUE file
+- ✅ hasExternalNNUE() reports a loaded external network
+- ✅ getNNUESource() reports the loaded NNUE file path
+- ✅ loaded NNUE network produces the expected side-relative score
+- ✅ loadNNUE() rejects missing files
+- ✅ failed NNUE loads leave the active network unchanged
+- ✅ resetNNUEToBootstrap() restores the built-in fallback network
+
+</details>
+
+<details>
+<summary><b>Tactical position structure &nbsp;—&nbsp; 18/18 passed</b></summary>
 
 - ✅ checkmate (Fool's Mate): 0 legal moves for white
 - ✅ checkmate (Fool's Mate): white king is in check
@@ -521,11 +549,13 @@ _Perft node counts (4 positions × up to depth 4), evaluation sanity, tactical p
 - ✅ forced win: Rd1xd5 (takes free queen) is in the legal move list
 - ✅ pin: Be2-d3 is illegal (bishop is pinned to the king)
 - ✅ pin: Be2-f3 is illegal (bishop is pinned to the king)
+- ✅ parseMove rejects pseudo-legal pinned moves
 - ✅ en passant: e5xd6 is in the legal move list
 - ✅ promotion: a7-a8=Q is legal
 - ✅ promotion: a7-a8=R is legal
 - ✅ promotion: a7-a8=B is legal
 - ✅ promotion: a7-a8=N is legal
+- ✅ promotion capture stores the captured piece for move ordering
 - ✅ castling: white kingside O-O is legal
 - ✅ castling: white queenside O-O-O is legal
 
@@ -556,10 +586,21 @@ _Perft node counts (4 positions × up to depth 4), evaluation sanity, tactical p
 </details>
 
 <details>
-<summary><b>Repetition detection &nbsp;—&nbsp; 2/2 passed</b></summary>
+<summary><b>Repetition detection &nbsp;—&nbsp; 3/3 passed</b></summary>
 
+- ✅ parsePosition records the pre-move hash before incrementing repetitionIndex
 - ✅ isRepeating() returns 1 after current hash is recorded
 - ✅ isRepeating() returns 0 for an unseen position
+
+</details>
+
+<details>
+<summary><b>Search API &nbsp;—&nbsp; 4/4 passed</b></summary>
+
+- ✅ communicate() does not read stdin when UCI input polling is disabled
+- ✅ searchPosition() completes under CTest without stdin side effects
+- ✅ searchPosition() returns a legal best move through the public API
+- ✅ searchPosition() stores the root best move in the transposition table
 
 </details>
 
