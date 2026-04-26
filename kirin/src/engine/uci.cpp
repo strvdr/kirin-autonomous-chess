@@ -43,8 +43,8 @@ static char *trimOptionValue(char *value) {
 }
 
 static int moveOverheadMs = 100;
-static int slowMover = 60;
-static int maxManagedMoveTimeMs = 500;
+static int slowMover = 85;
+static int maxManagedMoveTimeMs = 1500;
 
 static int parsePositiveInt(char *value, int fallback) {
     int parsed = atoi(value);
@@ -252,8 +252,8 @@ void uciLoop() {
     printf("option name Use NNUE type check default false\n");
     printf("option name EvalFile type string default <empty>\n");
     printf("option name Move Overhead type spin default 100 min 0 max 5000\n");
-    printf("option name Slow Mover type spin default 60 min 10 max 200\n");
-    printf("option name Max Managed Move Time type spin default 500 min 0 max 60000\n");
+    printf("option name Slow Mover type spin default 85 min 10 max 200\n");
+    printf("option name Max Managed Move Time type spin default 1500 min 0 max 60000\n");
     printf("uciok\n");
     
     while (1) {
@@ -293,8 +293,8 @@ void uciLoop() {
             printf("option name Use NNUE type check default false\n");
             printf("option name EvalFile type string default <empty>\n");
             printf("option name Move Overhead type spin default 100 min 0 max 5000\n");
-            printf("option name Slow Mover type spin default 60 min 10 max 200\n");
-            printf("option name Max Managed Move Time type spin default 500 min 0 max 60000\n");
+            printf("option name Slow Mover type spin default 85 min 10 max 200\n");
+            printf("option name Max Managed Move Time type spin default 1500 min 0 max 60000\n");
             printf("uciok\n");
         }
         else if (strncmp(input, "setoption name Skill Level value", 32) == 0) {
