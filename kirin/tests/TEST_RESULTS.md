@@ -1,9 +1,9 @@
 # Kirin Chess Engine — Test Results
 
-> Generated: 2026-04-26 13:56 UTC  
+> Generated: 2026-04-26 18:59 UTC  
 > Run `cmake --build build --target test_report` to refresh.
 
-![tests](https://img.shields.io/badge/tests-418%2F418+passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-424%2F424+passing-brightgreen)
 
 ## Summary
 
@@ -11,9 +11,9 @@
 |---|---|---|---|---|
 | Captured Piece Detection | ✅ | 10 | 0 | 0.00 s |
 | Board Interpreter | ✅ | 63 | 0 | 0.00 s |
-| Game Controller | ✅ | 260 | 0 | 0.01 s |
-| Engine Validity & Skill Level | ✅ | 85 | 0 | 0.22 s |
-| **Total** | ✅ | **418** | **0** | — |
+| Game Controller | ✅ | 266 | 0 | 0.00 s |
+| Engine Validity & Skill Level | ✅ | 85 | 0 | 0.20 s |
+| **Total** | ✅ | **424** | **0** | — |
 
 ## Detail
 
@@ -356,6 +356,16 @@ _Integration layer: coordinate conversion, piece conversion, PhysicalBoard sync,
 </details>
 
 <details>
+<summary><b>Storage column layouts &nbsp;—&nbsp; 4/4 passed</b></summary>
+
+- ✅ white P5 is in the visual right column
+- ✅ white R1 is in the visual left column
+- ✅ black P5 is in the visual left column
+- ✅ black R1 is in the visual right column
+
+</details>
+
+<details>
 <summary><b>Gantry rejects slotless capture &nbsp;—&nbsp; 1/1 passed</b></summary>
 
 - ✅ capture execution fails without exact storage slot
@@ -363,7 +373,7 @@ _Integration layer: coordinate conversion, piece conversion, PhysicalBoard sync,
 </details>
 
 <details>
-<summary><b>GRBL timing and motion setup &nbsp;—&nbsp; 7/7 passed</b></summary>
+<summary><b>GRBL timing and motion setup &nbsp;—&nbsp; 9/9 passed</b></summary>
 
 - ✅ 100ms dwell is encoded as GRBL seconds
 - ✅ 750ms dwell is encoded as GRBL seconds
@@ -372,6 +382,8 @@ _Integration layer: coordinate conversion, piece conversion, PhysicalBoard sync,
 - ✅ motion setup selects absolute positioning
 - ✅ motion setup selects units-per-minute feed
 - ✅ motion setup leaves magnet off
+- ✅ magnet on uses GRBL coolant enable
+- ✅ magnet off uses GRBL coolant disable
 
 </details>
 
