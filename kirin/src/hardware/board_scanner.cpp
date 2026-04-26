@@ -191,6 +191,7 @@ bool BoardScanner::init() {
             return false;
         }
         gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_INPUT);
+        gpiod_line_settings_set_bias(settings, GPIOD_LINE_BIAS_PULL_UP);
 
         struct gpiod_line_config* lineConfig = gpiod_line_config_new();
         if (!lineConfig) {
