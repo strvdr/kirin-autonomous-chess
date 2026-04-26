@@ -24,12 +24,13 @@ from nnue_format import (
 class Example:
     features: list[int]
     target: float
+    side: str
 
 
 def target_from_score(score_cp: float, side: str, perspective: str) -> float:
-    if perspective == "side":
-        return score_cp
     if perspective == "white":
+        return score_cp
+    if perspective == "side":
         return score_cp if side == "w" else -score_cp
     raise ValueError(f"unknown label perspective: {perspective}")
 
@@ -53,7 +54,7 @@ def parse_csv_examples(path: Path, perspective: str, target_clip: int) -> list[E
                     raise ValueError("CSV header must include fen and score_cp columns")
                 features, side = fen_features(fen)
                 target = target_from_score(float(score), side, perspective)
-                examples.append(Example(features, clamp(target, -target_clip, target_clip)))
+                examples.append(Example(features, clamp(target, -target_clip, target_clip), side))
         else:
             reader = csv.reader(file)
             for row in reader:
@@ -63,7 +64,7 @@ def parse_csv_examples(path: Path, perspective: str, target_clip: int) -> list[E
                     raise ValueError("CSV rows without a header must be: fen,score_cp")
                 features, side = fen_features(row[0])
                 target = target_from_score(float(row[1]), side, perspective)
-                examples.append(Example(features, clamp(target, -target_clip, target_clip)))
+                examples.append(Example(features, clamp(target, -target_clip, target_clip), side))
 
     return examples
 
@@ -88,7 +89,7 @@ def parse_epd_examples(path: Path, perspective: str, target_clip: int) -> list[E
             fen = " ".join(fields[:4]) + " 0 1"
             features, side = fen_features(fen)
             target = target_from_score(float(match.group(1)), side, perspective)
-            examples.append(Example(features, clamp(target, -target_clip, target_clip)))
+            examples.append(Example(features, clamp(target, -target_clip, target_clip), side))
 
     return examples
 
@@ -176,12 +177,12 @@ def self_test_examples() -> list[Example]:
         ("4k3/8/8/8/8/8/8/4KR2 w - - 0 1", 500),
         ("4k3/8/8/8/8/8/8/4KP2 w - - 0 1", 100),
         ("4k1q1/8/8/8/8/8/8/4K3 w - - 0 1", -900),
-        ("4k3/8/8/8/8/8/8/4KQ2 b - - 0 1", -900),
+        ("4k3/8/8/8/8/8/8/4KQ2 b - - 0 1", 900),
     ]
     examples: list[Example] = []
     for fen, score in rows:
         features, side = fen_features(fen)
-        examples.append(Example(features, target_from_score(score, side, "white")))
+        examples.append(Example(features, target_from_score(score, side, "white"), side))
     return examples
 
 
@@ -191,7 +192,16 @@ def main() -> int:
     parser.add_argument("--output", required=True, help="Output .knnue file")
     parser.add_argument("--checkpoint", help="Optional compact JSON checkpoint")
     parser.add_argument("--format", choices=("auto", "csv", "epd"), default="auto")
-    parser.add_argument("--label-perspective", choices=("white", "side"), default="white")
+    parser.add_argument(
+        "--label-perspective",
+        choices=("white", "side"),
+        default="white",
+        help=(
+            "Perspective of input scores. Use 'white' for Stockfish/PGN labels "
+            "where positive means White is better, or 'side' when positive means "
+            "the side to move is better."
+        ),
+    )
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--learning-rate", type=float, default=0.02)
     parser.add_argument("--l2", type=float, default=0.0)
@@ -207,6 +217,14 @@ def main() -> int:
         if not args.input:
             parser.error("--input is required unless --self-test is used")
         examples = load_examples(Path(args.input), args.format, args.label_perspective, args.target_clip)
+
+    white_to_move = sum(1 for example in examples if example.side == "w")
+    black_to_move = len(examples) - white_to_move
+    print(
+        f"loaded examples={len(examples)} "
+        f"white_to_move={white_to_move} black_to_move={black_to_move} "
+        f"label_perspective={args.label_perspective}"
+    )
 
     weights, bias, train_error, validation_error = train_linear(
         examples=examples,
