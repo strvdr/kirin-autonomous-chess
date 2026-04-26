@@ -216,16 +216,24 @@ static void testNNUEScaffold() {
 
     parseFEN(startPosition);
     setUseNNUE(false);
+    setNNUEBlend(50);
     int classicalStart = evaluate();
     setUseNNUE(true);
-    int nnueStart = evaluate();
+    int blendedStart = evaluate();
+    int nnueStart = evaluateNNUE();
 
     TEST_ASSERT(getUseNNUE(),
                 "setUseNNUE(true) enables NNUE evaluation mode");
-    TEST_ASSERT(abs(nnueStart) < 100,
-                "NNUE starting position evaluates near 0 (|score| < 100cp)");
+    TEST_ASSERT(getNNUEBlend() == 50,
+                "NNUE blend defaults to a 50 percent mix in tests");
+    TEST_ASSERT(blendedStart == (classicalStart + nnueStart) / 2,
+                "evaluate() blends classical and NNUE scores when NNUE mode is enabled");
+    TEST_ASSERT(abs(blendedStart) < 100,
+                "blended NNUE starting position evaluates near 0 (|score| < 100cp)");
+
+    setNNUEBlend(100);
     TEST_ASSERT(evaluateNNUE() == evaluate(),
-                "evaluate() routes to evaluateNNUE() when NNUE mode is enabled");
+                "NNUE Blend 100 routes evaluate() to pure evaluateNNUE()");
 
     parseFEN("4k3/8/8/8/8/8/8/4KQ2 w - - 0 1");
     int whiteToMoveScore = evaluate();
@@ -279,6 +287,7 @@ static void testNNUEScaffold() {
                 "failed NNUE loads leave the active network unchanged");
 
     resetNNUEToBootstrap();
+    setNNUEBlend(50);
     setUseNNUE(false);
     TEST_ASSERT(!hasExternalNNUE(),
                 "resetNNUEToBootstrap() restores the built-in fallback network");

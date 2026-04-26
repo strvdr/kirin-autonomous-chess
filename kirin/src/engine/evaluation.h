@@ -55,5 +55,7 @@ int evaluate();
 /************ NNUE Evaluation Mode ************/
 void setUseNNUE(bool enabled);
 bool getUseNNUE();
+void setNNUEBlend(int percent);
+int getNNUEBlend();
 
 #endif // KIRIN_EVALUATION_H
